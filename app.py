@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-CGB TERMINAL — XAU/USD
-Institutional-Grade Quantitative Market Intelligence Terminal
+=========================================================
+CGB COMUNITY — Terminal Cuantitativo XAU/USD (Versión Pro)
+=========================================================
 """
 
 import os
 import base64
 import time
-from datetime import datetime, timedelta, timezone
-from io import StringIO
+from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
@@ -18,379 +18,269 @@ import requests
 import streamlit as st
 import yfinance as yf
 
+# Intentar importar librerías opcionales
 try:
     from curl_cffi import requests as curl_requests
-    HAS_CURL_CFFI = True
+    _HAS_CURL_CFFI = True
 except Exception:
-    HAS_CURL_CFFI = False
+    _HAS_CURL_CFFI = False
 
 try:
     import feedparser
-    HAS_FEEDPARSER = True
+    _HAS_FEEDPARSER = True
 except Exception:
-    HAS_FEEDPARSER = False
+    _HAS_FEEDPARSER = False
 
 
-# ---------------------------------------------------------------------
-# CONFIGURACIÓN DE PÁGINA Y TEMA
-# ---------------------------------------------------------------------
+# =========================================================
+# CONFIGURACIÓN DE PÁGINA STREAMLIT
+# =========================================================
 st.set_page_config(
-    page_title="CGB Terminal | XAU/USD",
-    page_icon="📊",
+    page_title="CGB COMUNITY | Terminal XAU/USD",
+    page_icon="🥇",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-THEMES = {
-    "Institutional Dark": {
-        "bg": "#0b0f14",
-        "panel": "#111720",
-        "panel_2": "#151c26",
-        "border": "#27313d",
-        "text": "#edf2f7",
-        "muted": "#8d9aaa",
-        "primary": "#d8a84e",
-        "primary_2": "#f1c66a",
-        "bull": "#2ac58b",
-        "bear": "#ef6262",
-        "neutral": "#d8a84e",
-        "blue": "#5da9e9",
-        "grid": "#202a35",
-    },
-    "Obsidian Gold": {
-        "bg": "#090909",
-        "panel": "#12110e",
-        "panel_2": "#191711",
-        "border": "#3b3423",
-        "text": "#f5f2e9",
-        "muted": "#a69f8c",
-        "primary": "#c9a227",
-        "primary_2": "#e7c85b",
-        "bull": "#36c98f",
-        "bear": "#ef6666",
-        "neutral": "#d4ad38",
-        "blue": "#5ca8df",
-        "grid": "#2b271c",
-    },
-    "Executive Light": {
-        "bg": "#f3f5f8",
-        "panel": "#ffffff",
-        "panel_2": "#f8fafc",
-        "border": "#d8dee7",
-        "text": "#17202b",
-        "muted": "#667384",
-        "primary": "#9a6a16",
-        "primary_2": "#b88323",
-        "bull": "#16865e",
-        "bear": "#c64242",
-        "neutral": "#9a6a16",
-        "blue": "#256aa8",
-        "grid": "#dfe5ec",
-    },
-    "Slate Blue": {
-        "bg": "#0c121c",
-        "panel": "#121a27",
-        "panel_2": "#172233",
-        "border": "#2a3a4e",
-        "text": "#e9eef5",
-        "muted": "#8c9aae",
-        "primary": "#6ea8df",
-        "primary_2": "#8fc0ef",
-        "bull": "#35c18b",
-        "bear": "#eb6565",
-        "neutral": "#d5a84d",
-        "blue": "#6ea8df",
-        "grid": "#233246",
-    },
-}
-
-if "theme" not in st.session_state:
-    st.session_state.theme = "Institutional Dark"
-if "module" not in st.session_state:
-    st.session_state.module = "Overview"
-
-T = THEMES[st.session_state.theme]
-
-
-# ---------------------------------------------------------------------
-# HELPERS & UTILS
-# ---------------------------------------------------------------------
+# =========================================================
+# CARGA Y CODIFICACIÓN DEL LOGO (BASE64)
+# =========================================================
 def get_logo_data_uri():
-    candidates = ["logo.jpg", "logo.jpeg", "logo.png", "assets/logo.jpg", "assets/logo.png"]
+    candidates = ["logo.jpg", "logo.jpeg", "logo.png"]
     for path in candidates:
         if os.path.exists(path) and os.path.getsize(path) > 0:
             ext = path.rsplit(".", 1)[-1].lower()
-            mime = "image/jpeg" if ext in {"jpg", "jpeg"} else "image/png"
-            with open(path, "rb") as f:
-                return f"data:{mime};base64,{base64.b64encode(f.read()).decode('utf-8')}"
+            mime = "image/jpeg" if ext in ["jpg", "jpeg"] else "image/png"
+            with open(path, "rb") as img_file:
+                b64 = base64.b64encode(img_file.read()).decode("utf-8")
+                return f"data:{mime};base64,{b64}"
     return ""
 
-LOGO_SRC = get_logo_data_uri()
+logo_src = get_logo_data_uri()
 
-def safe_float(value, default=np.nan):
-    try:
-        val = float(value)
-        return val if not np.isnan(val) else default
-    except Exception:
-        return default
-
-def fmt_money(value, decimals=2):
-    val = safe_float(value)
-    return "—" if np.isnan(val) else f"${val:,.{decimals}f}"
-
-def pct_change(series, periods=1):
-    if series is None or len(series) <= periods or series.empty:
-        return 0.0
-    val_curr = safe_float(series.iloc[-1])
-    val_prev = safe_float(series.iloc[-1 - periods])
-    if np.isnan(val_curr) or np.isnan(val_prev) or val_prev == 0:
-        return 0.0
-    return ((val_curr / val_prev) - 1.0) * 100.0
-
-def status_badge(text, kind="neutral"):
-    cls_map = {
-        "bull": "badge badge-bull",
-        "bear": "badge badge-bear",
-        "neutral": "badge badge-neutral",
-        "info": "badge badge-info",
+# =========================================================
+# GESTIÓN DE TEMAS VISUALES (PALETAS DE ALTO CONTRASTE)
+# =========================================================
+THEMES = {
+    "🏛️ Institutional Bloomberg": {
+        "bg": "#000000", "card": "#111111", "border": "#2a2a2a",
+        "primary": "#ff9900", "primary_light": "#ffb84d", "text": "#00ff00",
+        "muted": "#aaaaaa", "bull": "#00ff00", "bear": "#ff0000", "neutral": "#ff9900", "blue": "#00ffff"
+    },
+    "☀️ Executive Light (Modo Claro)": {
+        "bg": "#f4f6f9", "card": "#ffffff", "border": "#cbd5e1",
+        "primary": "#b45309", "primary_light": "#d97706", "text": "#0f172a",
+        "muted": "#64748b", "bull": "#16a34a", "bear": "#dc2626", "neutral": "#d97706", "blue": "#2563eb"
+    },
+    "⚡ Cyberpunk Neon": {
+        "bg": "#0d0221", "card": "#190a38", "border": "#ff007f",
+        "primary": "#00f5d4", "primary_light": "#7b2cbf", "text": "#ffffff",
+        "muted": "#9d4edd", "bull": "#00f5d4", "bear": "#ff0055", "neutral": "#fee440", "blue": "#00bbf9"
+    },
+    "🌲 Emerald Matrix": {
+        "bg": "#061a14", "card": "#0b2b22", "border": "#165b46",
+        "primary": "#10b981", "primary_light": "#34d399", "text": "#e6f4f1",
+        "muted": "#6b9080", "bull": "#00ff9d", "bear": "#ff4d6d", "neutral": "#f4a261", "blue": "#3a86ff"
+    },
+    "👑 Royal Obsidian & Gold": {
+        "bg": "#050505", "card": "#14120c", "border": "#d4af37",
+        "primary": "#ffd700", "primary_light": "#ffe87c", "text": "#fffdfa",
+        "muted": "#a39778", "bull": "#00e676", "bear": "#ff1744", "neutral": "#ffd700", "blue": "#29b6f6"
+    },
+    "🍇 Velvet Violet": {
+        "bg": "#12081f", "card": "#211238", "border": "#432371",
+        "primary": "#9d4edd", "primary_light": "#c77dff", "text": "#f3e8ff",
+        "muted": "#8a70ab", "bull": "#00e676", "bear": "#ff3366", "neutral": "#ffb703", "blue": "#4cc9f0"
     }
-    return f'<span class="{cls_map.get(kind, "badge badge-neutral")}">{text}</span>'
+}
 
+st.sidebar.markdown("### 🎨 Personalización de Interfaz")
+theme_choice = st.sidebar.selectbox("Selecciona un tema visual:", list(THEMES.keys()))
+T = THEMES[theme_choice]
 
-# ---------------------------------------------------------------------
-# INYECCIÓN CSS CORREGIDA
-# ---------------------------------------------------------------------
-st.markdown(
-    f"""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap');
-
-    :root {{
-        --bg: {T['bg']};
-        --panel: {T['panel']};
-        --panel2: {T['panel_2']};
-        --border: {T['border']};
-        --text: {T['text']};
-        --muted: {T['muted']};
-        --primary: {T['primary']};
-        --primary2: {T['primary_2']};
-        --bull: {T['bull']};
-        --bear: {T['bear']};
-        --neutral: {T['neutral']};
-        --blue: {T['blue']};
-        --grid: {T['grid']};
+# CSS con Marca de Agua de fondo y Tarjetas Personalizadas
+bg_watermark_css = f"""
+    .stApp::before {{
+        content: "";
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 600px;
+        height: 600px;
+        background-image: url('{logo_src}');
+        background-repeat: no-repeat;
+        background-position: center;
+        background-size: contain;
+        opacity: 0.04;
+        pointer-events: none;
+        z-index: 0;
     }}
+""" if logo_src else ""
+
+st.markdown(f"""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
     html, body, [class*="css"] {{ font-family: 'Inter', sans-serif; }}
-    .stApp {{ background: var(--bg); color: var(--text); }}
-    #MainMenu, footer, header {{ visibility: hidden; }}
+    .stApp {{ background-color: {T['bg']}; color: {T['text']}; }}
+    #MainMenu, footer {{visibility: hidden;}}
+    section[data-testid="stSidebar"] {{ background-color: {T['card']}; border-right: 1px solid {T['border']}; }}
 
-    .block-container {{
-        max-width: 1680px;
-        padding-top: 1.2rem;
-        padding-bottom: 2.5rem;
+    {bg_watermark_css}
+
+    .cgb-header {{
+        display: flex; align-items: center; gap: 18px;
+        padding: 16px 24px; margin-bottom: 20px;
+        background: linear-gradient(135deg, {T['card']} 0%, {T['bg']} 100%);
+        border: 1px solid {T['border']}; border-radius: 14px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        position: relative; z-index: 1;
+    }}
+    .cgb-logo-img {{
+        width: 52px; height: 52px; object-fit: contain; border-radius: 8px; flex-shrink: 0;
+    }}
+    .cgb-logo-fallback {{
+        width: 52px; height: 52px; border-radius: 12px;
+        background: linear-gradient(135deg, {T['primary']} 0%, {T['primary_light']} 100%);
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 800; font-size: 1.1rem; color: #000; flex-shrink: 0;
+    }}
+    .cgb-title {{ font-size: 1.5rem; font-weight: 800; color: {T['text']}; letter-spacing: -0.02em; margin: 0; }}
+    .cgb-subtitle {{ color: {T['muted']}; font-size: 0.85rem; margin-top: 2px; }}
+
+    .cgb-label {{ color: {T['muted']}; font-size: 0.75rem; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; margin-bottom: 10px; }}
+    .cgb-bull {{ color: {T['bull']}; font-weight: 700; }}
+    .cgb-bear {{ color: {T['bear']}; font-weight: 700; }}
+    .cgb-neutral {{ color: {T['neutral']}; font-weight: 700; }}
+
+    .cgb-ai-box {{
+        background: linear-gradient(135deg, rgba(201, 162, 39, 0.08) 0%, rgba(18, 21, 28, 0.6) 100%);
+        border: 1px solid {T['primary']}; border-radius: 12px;
+        padding: 16px 20px; margin-bottom: 20px;
+    }}
+    .cgb-ai-title {{
+        font-weight: 800; color: {T['primary_light']}; font-size: 0.95rem;
+        display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
     }}
 
-    section[data-testid="stSidebar"] {{
-        background: var(--panel);
-        border-right: 1px solid var(--border);
+    .cgb-news-card {{
+        background-color: {T['card']}; border: 1px solid {T['border']}; border-radius: 12px;
+        padding: 14px 16px; margin-bottom: 10px; transition: all .2s ease;
     }}
+    .cgb-news-card:hover {{ border-color: {T['primary']}; transform: translateY(-2px); }}
+    .cgb-news-title {{ color: {T['text']}; text-decoration: none; font-weight: 600; font-size: 0.95rem; line-height: 1.4; }}
+    .cgb-news-meta {{ color: {T['muted']}; font-size: 0.75rem; margin-top: 6px; }}
 
-    /* Estilos de Tarjetas Limpias (Evita divs fantasma) */
-    div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"] {{
-        margin-bottom: 0px;
+    /* ESTILOS DE TARJETAS DESGLOSADAS DEL COT */
+    .cgb-cot-card {{
+        background-color: {T['card']}; border: 1px solid {T['border']}; border-radius: 12px;
+        padding: 16px; margin-bottom: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     }}
-
-    .metric-card {{
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 14px;
-        height: 100%;
+    .cgb-cot-header {{
+        display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;
     }}
-    .metric-label {{ color: var(--muted); font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }}
-    .metric-value {{ font-family: 'JetBrains Mono', monospace; font-size: 1.35rem; font-weight: 700; color: var(--text); margin-top: 4px; }}
-    .metric-sub {{ font-size: 0.72rem; color: var(--muted); margin-top: 4px; font-weight: 600; }}
-    .metric-positive {{ color: var(--bull) !important; }}
-    .metric-negative {{ color: var(--bear) !important; }}
-    .metric-neutral {{ color: var(--neutral) !important; }}
-
-    .terminal-card {{
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 16px;
-        margin-bottom: 16px;
+    .cgb-cot-title {{ font-weight: 700; font-size: 0.9rem; color: {T['text']}; }}
+    .cgb-cot-badge-long {{
+        background: rgba(47,213,131,0.15); color: {T['bull']}; border: 1px solid rgba(47,213,131,0.4);
+        padding: 3px 8px; border-radius: 6px; font-weight: 800; font-size: 0.68rem; letter-spacing: 0.05em;
     }}
+    .cgb-cot-badge-short {{
+        background: rgba(255,90,103,0.15); color: {T['bear']}; border: 1px solid rgba(255,90,103,0.4);
+        padding: 3px 8px; border-radius: 6px; font-weight: 800; font-size: 0.68rem; letter-spacing: 0.05em;
+    }}
+    .cgb-cot-row {{ display: flex; justify-content: space-between; font-size: 0.88rem; padding: 4px 0; color: {T['muted']}; }}
+    .cgb-cot-row strong {{ color: {T['text']}; font-weight: 700; }}
+    .cgb-cot-divider {{ border-bottom: 1px solid {T['border']}; margin: 8px 0; }}
 
-    .badge {{ display:inline-flex; align-items:center; border-radius:4px; padding:3px 7px; font-size:.62rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }}
-    .badge-bull {{ color:var(--bull); background:rgba(42,197,139,.12); border:1px solid rgba(42,197,139,.25); }}
-    .badge-bear {{ color:var(--bear); background:rgba(239,98,98,.12); border:1px solid rgba(239,98,98,.25); }}
-    .badge-neutral {{ color:var(--neutral); background:rgba(216,168,78,.12); border:1px solid rgba(216,168,78,.25); }}
-    .badge-info {{ color:var(--blue); background:rgba(93,169,233,.12); border:1px solid rgba(93,169,233,.25); }}
+    .cgb-table {{ width: 100%; border-collapse: collapse; font-size: 0.88rem; }}
+    .cgb-table th {{
+        text-align: left; color: {T['muted']}; font-size: 0.7rem; text-transform: uppercase;
+        letter-spacing: .06em; padding: 10px; border-bottom: 1px solid {T['border']}; font-weight: 700;
+    }}
+    .cgb-table td {{ padding: 10px; border-bottom: 1px solid {T['border']}; color: {T['text']}; }}
+    .cgb-badge {{ display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 0.72rem; font-weight: 700; }}
+    .cgb-badge-res {{ background: rgba(255,90,103,0.15); color: {T['bear']}; border: 1px solid rgba(255,90,103,0.35); }}
+    .cgb-badge-sop {{ background: rgba(47,213,131,0.15); color: {T['bull']}; border: 1px solid rgba(47,213,131,0.35); }}
+    .cgb-badge-piv {{ background: rgba(232,199,102,0.15); color: {T['neutral']}; border: 1px solid rgba(232,199,102,0.35); }}
 
-    .level-table {{ width:100%; border-collapse:collapse; font-size:.80rem; margin-top:8px; }}
-    .level-table th {{ color:var(--muted); font-size:.65rem; text-transform:uppercase; letter-spacing:.08em; text-align:left; padding:8px 12px; border-bottom:1px solid var(--border); }}
-    .level-table td {{ padding:10px 12px; border-bottom:1px solid var(--border); color:var(--text); }}
-    .price-cell {{ font-family:'JetBrains Mono',monospace; font-weight:700; }}
+    .stTabs [data-baseweb="tab-list"] {{ gap: 6px; border-bottom: 1px solid {T['border']}; }}
+    .stTabs [data-baseweb="tab"] {{ background-color: transparent; border-radius: 8px 8px 0 0; padding: 10px 18px; color: {T['muted']}; font-weight: 600; }}
+    .stTabs [aria-selected="true"] {{ color: {T['primary_light']} !important; border-bottom: 2px solid {T['primary']}; }}
 
-    .news-card {{ background:var(--panel_2); border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin-bottom:10px; }}
-    .news-top {{ display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }}
-    .news-time {{ color:var(--muted); font-size:.68rem; }}
-    .news-link {{ color:var(--text) !important; text-decoration:none !important; font-size:.85rem; font-weight:600; line-height:1.4; }}
-    .news-link:hover {{ color:var(--primary2) !important; }}
-    </style>
-    """,
-    unsafe_allow_html=True,
+    div[data-testid="stMetric"] {{ background-color: {T['card']}; border: 1px solid {T['border']}; border-radius: 12px; padding: 14px 16px; }}
+</style>
+""", unsafe_allow_html=True)
+
+PLOTLY_LAYOUT = dict(
+    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color=T["text"],
+    font_family="Inter",
+    xaxis=dict(gridcolor=T["border"], zerolinecolor=T["border"]),
+    yaxis=dict(gridcolor=T["border"], zerolinecolor=T["border"]),
 )
 
+# =========================================================
+# SESIÓN HTTP "CAMUFLADA"
+# =========================================================
+def _get_yf_session():
+    if _HAS_CURL_CFFI:
+        try:
+            return curl_requests.Session(impersonate="chrome")
+        except Exception:
+            return None
+    return None
 
-# ---------------------------------------------------------------------
-# MOTORES DE DATOS RESILIENTES CON SINTESIS SINTETICA DE RESPALDO
-# ---------------------------------------------------------------------
-HTTP_HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0.0.0 Safari/537.36"}
+_YF_SESSION = _get_yf_session()
 
-def generate_synthetic_ohlc(base_price=2500.0, days=250, volatility=0.012, trend=0.0003):
-    dates = pd.date_range(end=datetime.now(timezone.utc), periods=days, freq="B")
-    np.random.seed(42)
-    returns = np.random.normal(trend, volatility, days)
-    price_paths = base_price * np.exp(np.cumsum(returns))
-    
-    highs = price_paths * (1 + np.abs(np.random.normal(0.003, 0.004, days)))
-    lows = price_paths * (1 - np.abs(np.random.normal(0.003, 0.004, days)))
-    opens = price_paths * (1 + np.random.normal(0, 0.002, days))
-    volumes = np.random.randint(50000, 250000, days)
-    
-    df = pd.DataFrame({
-        "Open": opens, "High": highs, "Low": lows, "Close": price_paths, "Volume": volumes
-    }, index=dates)
-    return df
+def _retry(fn, tries: int = 3, delay: float = 1.0):
+    for _ in range(tries):
+        try:
+            res = fn()
+            if res is not None and not (isinstance(res, pd.DataFrame) and res.empty):
+                return res
+        except Exception:
+            pass
+        time.sleep(delay)
+    return None
+
+# =========================================================
+# EXTRACCIÓN Y CÁLCULO DE DATOS PRECIOS
+# =========================================================
 
 @st.cache_data(ttl=300, show_spinner=False)
-def get_price_data(ticker: str, period="1y"):
-    try:
-        tk = yf.Ticker(ticker)
-        df = tk.history(period=period, interval="1d", auto_adjust=False)
-        if df is not None and not df.empty and "Close" in df.columns and len(df) > 10:
-            return df.dropna(subset=["Close"])
-    except Exception:
-        pass
-    
-    # Fallback si Yahoo Finance falla/bloquea
-    base_map = {"GC=F": 2510.0, "DX-Y.NYB": 101.5, "DX=F": 101.5}
-    base = base_map.get(ticker, 100.0)
-    return generate_synthetic_ohlc(base_price=base)
+def get_price_data(ticker: str, period: str = "1y", interval: str = "1d") -> pd.DataFrame:
+    def _fetch():
+        tk = yf.Ticker(ticker, session=_YF_SESSION) if _YF_SESSION else yf.Ticker(ticker)
+        df = tk.history(period=period, interval=interval, auto_adjust=False)
+        if df is None or df.empty:
+            return None
+        return df.dropna(subset=["Close"])
+    df = _retry(_fetch)
+    return df if df is not None else pd.DataFrame()
 
 @st.cache_data(ttl=600, show_spinner=False)
-def get_us02y():
+def get_us02y() -> pd.DataFrame:
     try:
-        url = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS2"
-        res = requests.get(url, headers=HTTP_HEADERS, timeout=5)
-        if res.status_code == 200:
-            df = pd.read_csv(StringIO(res.text))
-            df.columns = ["Date", "Close"]
-            df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-            df["Close"] = pd.to_numeric(df["Close"], errors="coerce")
-            df = df.dropna().set_index("Date")
-            if not df.empty:
-                return df.tail(300)
-    except Exception:
-        pass
-    
-    dates = pd.date_range(end=datetime.now(timezone.utc), periods=250, freq="B")
-    np.random.seed(101)
-    yields = 4.20 + np.cumsum(np.random.normal(-0.001, 0.02, 250))
-    return pd.DataFrame({"Close": yields}, index=dates)
-
-@st.cache_data(ttl=1800, show_spinner=False)
-def get_cot_gold():
-    try:
-        url = "https://publicreporting.cftc.gov/resource/kh3c-5v3d.json"
-        params = {"$where": "cftc_contract_market_code='088691'", "$order": "report_date_as_yyyy_mm_dd DESC", "$limit": 26}
-        r = requests.get(url, params=params, timeout=5, headers=HTTP_HEADERS)
-        if r.status_code == 200 and len(r.json()) > 0:
-            df = pd.DataFrame(r.json())
-            for col in ["noncomm_positions_long_all", "noncomm_positions_short_all", "comm_positions_long_all", "comm_positions_short_all"]:
-                if col in df.columns:
-                    df[col] = pd.to_numeric(df[col], errors="coerce")
-            df["report_date_as_yyyy_mm_dd"] = pd.to_datetime(df["report_date_as_yyyy_mm_dd"])
-            return df.sort_values("report_date_as_yyyy_mm_dd")
+        import pandas_datareader.data as web
+        end = datetime.today()
+        start = end - timedelta(days=400)
+        df = web.DataReader("DGS2", "fred", start, end).dropna()
+        if not df.empty:
+            df.columns = ["Close"]
+            return df
     except Exception:
         pass
 
-    dates = pd.date_range(end=datetime.now(timezone.utc), periods=20, freq="W-TUE")
-    return pd.DataFrame({
-        "report_date_as_yyyy_mm_dd": dates,
-        "noncomm_positions_long_all": np.linspace(220000, 260000, 20) + np.random.randint(-5000, 5000, 20),
-        "noncomm_positions_short_all": np.linspace(50000, 42000, 20) + np.random.randint(-2000, 2000, 20),
-        "comm_positions_long_all": np.linspace(80000, 95000, 20),
-        "comm_positions_short_all": np.linspace(280000, 310000, 20),
-    })
+    for sym in ["2YY=F", "^TNX", "^IRX"]:
+        df = get_price_data(sym, period="1y")
+        if not df.empty:
+            return df[["Close"]]
+    return pd.DataFrame()
 
-@st.cache_data(ttl=1800, show_spinner=False)
-def get_options_walls():
-    try:
-        tk = yf.Ticker("GLD")
-        exps = tk.options
-        if exps:
-            chain = tk.option_chain(exps[0])
-            spot = float(tk.history(period="1d")["Close"].iloc[-1])
-            calls = chain.calls.groupby("strike")["openInterest"].sum().reset_index()
-            puts = chain.puts.groupby("strike")["openInterest"].sum().reset_index()
-            calls = calls[(calls["strike"] >= spot * 0.90) & (calls["strike"] <= spot * 1.10)]
-            puts = puts[(puts["strike"] >= spot * 0.90) & (puts["strike"] <= spot * 1.10)]
-            if not calls.empty and not puts.empty:
-                return calls, puts, exps[0], "GLD", spot
-    except Exception:
-        pass
+def ema(series: pd.Series, span: int) -> pd.Series:
+    return series.ewm(span=span, adjust=False).mean()
 
-    spot = 230.0
-    strikes = np.linspace(215, 245, 15)
-    calls_oi = np.random.randint(1000, 15000, 15)
-    puts_oi = np.random.randint(1000, 15000, 15)
-    calls_oi[10] = 28000  # Call Wall
-    puts_oi[4] = 31000   # Put Wall
-    
-    df_calls = pd.DataFrame({"strike": strikes, "openInterest": calls_oi})
-    df_puts = pd.DataFrame({"strike": strikes, "openInterest": puts_oi})
-    exp_date = (datetime.now() + timedelta(days=25)).strftime("%Y-%m-%d")
-    return df_calls, df_puts, exp_date, "GLD (Sintético)", spot
-
-@st.cache_data(ttl=300, show_spinner=False)
-def get_news(limit=10):
-    if HAS_FEEDPARSER:
-        for url in ["https://feeds.finance.yahoo.com/rss/2.0/headline?s=GC=F", "https://www.investing.com/rss/commodities_Gold.rss"]:
-            try:
-                parsed = feedparser.parse(url)
-                if parsed.entries:
-                    items = []
-                    for e in parsed.entries[:limit]:
-                        title = getattr(e, "title", "Titular no disponible")
-                        items.append({
-                            "title": title,
-                            "date_str": getattr(e, "published", "Reciente"),
-                            "link": getattr(e, "link", "#"),
-                            "impact": "Bullish" if any(w in title.lower() for w in ["up", "high", "gain", "surge", "bull"]) else "Bearish" if any(w in title.lower() for w in ["down", "low", "drop", "fall", "bear"]) else "Neutral"
-                        })
-                    return items
-            except Exception:
-                continue
-
-    return [
-        {"title": "El Oro sostiene máximos impulsado por compras de Bancos Centrales", "date_str": "Hace 25 min", "link": "#", "impact": "Bullish"},
-        {"title": "Rendimientos del Tesoro EE.UU. se estabilizan tras datos de empleo", "date_str": "Hace 1 hora", "link": "#", "impact": "Neutral"},
-        {"title": "Dólar retrocede levemente a la espera de discurso de la Reserva Federal", "date_str": "Hace 2 horas", "link": "#", "impact": "Bullish"},
-        {"title": "Muros de opciones en GLD sugieren soporte clave en rango actual", "date_str": "Hace 4 horas", "link": "#", "impact": "Neutral"},
-        {"title": "Posicionamiento COT muestra incremento de posiciones largas en especuladores", "date_str": "Hace 5 horas", "link": "#", "impact": "Bullish"},
-    ]
-
-
-# ---------------------------------------------------------------------
-# CÁLCULOS TÉCNICOS & ALGORITMOS DE SESGO
-# ---------------------------------------------------------------------
-def ema(series, span): return series.ewm(span=span, adjust=False).mean()
-
-def rsi(series, period=14):
+def rsi(series: pd.Series, period: int = 14) -> pd.Series:
     delta = series.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
@@ -399,377 +289,664 @@ def rsi(series, period=14):
     rs = avg_gain / avg_loss.replace(0, np.nan)
     return 100 - (100 / (1 + rs))
 
-def atr(df, period=14):
+def atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     high, low, close = df["High"], df["Low"], df["Close"]
-    tr = pd.concat([high - low, (high - close.shift()).abs(), (low - close.shift()).abs()], axis=1).max(axis=1)
+    tr = pd.concat([
+        high - low,
+        (high - close.shift()).abs(),
+        (low - close.shift()).abs()
+    ], axis=1).max(axis=1)
     return tr.rolling(period).mean()
 
-def pivot_table(df):
-    if len(df) < 2: return pd.DataFrame(), 0.0
-    last = df.iloc[-2]
-    curr = float(df.iloc[-1]["Close"])
-    h, l, c = float(last["High"]), float(last["Low"]), float(last["Close"])
-    pp = (h + l + c) / 3
-    rows = [
-        ("R3", pp + 2*(h - l), "Resistance"),
-        ("R2", pp + (h - l), "Resistance"),
-        ("R1", 2*pp - l, "Resistance"),
-        ("PP · Pivot", pp, "Pivot"),
-        ("S1", 2*pp - h, "Support"),
-        ("S2", pp - (h - l), "Support"),
-        ("S3", pp - 2*(h - l), "Support"),
-    ]
-    dfp = pd.DataFrame(rows, columns=["Level", "Price", "Type"])
-    dfp["Distance"] = dfp["Price"] - curr
-    return dfp.sort_values("Price", ascending=False), curr
+def bollinger_bands(series: pd.Series, window: int = 20, num_sd: int = 2):
+    sma = series.rolling(window).mean()
+    std = series.rolling(window).std()
+    upper = sma + (std * num_sd)
+    lower = sma - (std * num_sd)
+    return upper, sma, lower
 
-def calculate_bias(df_gold, df_dxy, df_us02y):
-    signals = {}
+def pivot_table(df: pd.DataFrame) -> tuple:
+    if len(df) < 2:
+        return pd.DataFrame(), 0.0
+    last = df.iloc[-2]
+    c_price = float(df.iloc[-1]["Close"])
+    h, l, c = float(last["High"]), float(last["Low"]), float(last["Close"])
+    
+    pp = (h + l + c) / 3
+    r1, s1 = 2 * pp - l, 2 * pp - h
+    r2, s2 = pp + (h - l), pp - (h - l)
+    r3, s3 = h + 2 * (pp - l), l - 2 * (h - pp)
+    
+    rng = h - l
+    r4_cam = c + rng * 1.1 / 2
+    s4_cam = c - rng * 1.1 / 2
+
+    rows = [
+        ("Resistencia R3", r3, "Resistencia"),
+        ("Resistencia R4 (Camarilla Breakout)", r4_cam, "Resistencia"),
+        ("Resistencia R2", r2, "Resistencia"),
+        ("Resistencia R1", r1, "Resistencia"),
+        ("Pivote Central (PP)", pp, "Pivote"),
+        ("Soporte S1", s1, "Soporte"),
+        ("Soporte S2", s2, "Soporte"),
+        ("Soporte S4 (Camarilla Breakout)", s4_cam, "Soporte"),
+        ("Soporte S3", s3, "Soporte"),
+    ]
+    dfp = pd.DataFrame(rows, columns=["Nivel", "Precio", "Tipo"]).sort_values("Precio", ascending=False)
+    return dfp, c_price
+
+def render_pivot_table(dfp: pd.DataFrame, ref_price: float):
+    badge_cls = {"Resistencia": "cgb-badge-res", "Soporte": "cgb-badge-sop", "Pivote": "cgb-badge-piv"}
+    rows_html = ""
+    for _, row in dfp.iterrows():
+        cls = badge_cls[row["Tipo"]]
+        rows_html += f"""
+        <tr>
+            <td>{row['Nivel']}</td>
+            <td style="font-weight:700;">${row['Precio']:,.2f}</td>
+            <td><span class="cgb-badge {cls}">{row['Tipo'].upper()}</span></td>
+        </tr>"""
+    html = f"""
+    <div class="cgb-label">Niveles Pivote Técnicos (Precio actual: ${ref_price:,.2f})</div>
+    <table class="cgb-table">
+        <thead><tr><th>Nivel</th><th>Precio</th><th>Tipo</th></tr></thead>
+        <tbody>{rows_html}</tbody>
+    </table>
+    """
+    st.markdown(html, unsafe_allow_html=True)
+
+# =========================================================
+# OBTENCIÓN COT EN TIEMPO REAL
+# =========================================================
+@st.cache_data(ttl=1800, show_spinner=False)
+def get_cot_gold() -> pd.DataFrame:
+    url_disagg = "https://publicreporting.cftc.gov/resource/kh3c-5v3d.json"
+    url_legacy = "https://publicreporting.cftc.gov/resource/6dca-aqww.json"
+    
+    params = {
+        "$where": "cftc_contract_market_code='088691'",
+        "$order": "report_date_as_yyyy_mm_dd DESC",
+        "$limit": 30,
+    }
+    def _fetch():
+        r = requests.get(url_disagg, params=params, timeout=12, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code == 200 and len(r.json()) > 0:
+            df = pd.DataFrame(r.json())
+        else:
+            r = requests.get(url_legacy, params=params, timeout=12, headers={"User-Agent": "Mozilla/5.0"})
+            r.raise_for_status()
+            df = pd.DataFrame(r.json())
+            
+        if df.empty:
+            return None
+        for col in df.columns:
+            if "positions" in col or "pct_of_oi" in col or col == "open_interest_all":
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+        df["report_date_as_yyyy_mm_dd"] = pd.to_datetime(df["report_date_as_yyyy_mm_dd"])
+        return df.sort_values("report_date_as_yyyy_mm_dd")
+    df = _retry(_fetch, tries=2)
+    return df if df is not None else pd.DataFrame()
+
+# =========================================================
+# OPCIONES Y MUROS
+# =========================================================
+@st.cache_data(ttl=1800, show_spinner=False)
+def get_options_walls(tickers=("GLD", "IAU")):
+    for ticker in tickers:
+        try:
+            tk = yf.Ticker(ticker, session=_YF_SESSION) if _YF_SESSION else yf.Ticker(ticker)
+            exps = tk.options
+            if not exps:
+                continue
+            hist = tk.history(period="5d")
+            if hist.empty:
+                continue
+            spot_price = hist["Close"].iloc[-1]
+            
+            for exp in exps[:3]:
+                chain = tk.option_chain(exp)
+                calls = chain.calls.dropna(subset=["strike", "openInterest"])
+                puts = chain.puts.dropna(subset=["strike", "openInterest"])
+                if calls.empty and puts.empty:
+                    continue
+                
+                calls_f = calls[(calls["strike"] >= spot_price * 0.88) & (calls["strike"] <= spot_price * 1.12)]
+                puts_f = puts[(puts["strike"] >= spot_price * 0.88) & (puts["strike"] <= spot_price * 1.12)]
+                
+                c_agg = calls_f.groupby("strike")["openInterest"].sum().reset_index()
+                p_agg = puts_f.groupby("strike")["openInterest"].sum().reset_index()
+                
+                if c_agg["openInterest"].sum() > 0 or p_agg["openInterest"].sum() > 0:
+                    return c_agg, p_agg, exp, ticker, spot_price
+        except Exception:
+            continue
+    return pd.DataFrame(), pd.DataFrame(), None, None, None
+
+# =========================================================
+# FUNCIONES DE NOTICIAS RECIENTES Y SENTIMIENTO XAU/USD
+# =========================================================
+def clasificar_impacto_oro(texto: str) -> str:
+    """Clasifica si la noticia es Alcista, Bajista o Neutral para el XAU/USD."""
+    t = texto.lower()
+    
+    bullish_kw = [
+        "gold up", "gold gains", "gold rises", "gold surges", "gold rallies", "gold climbs", "gold jumps", "gold high",
+        "fed rate cut", "rate cut", "dovish", "dollar drops", "dollar falls", "dxy falls", "yields drop", 
+        "yields fall", "safe haven", "inflation surges", "geopolitical tension", "sanctions", "trade war", "war"
+    ]
+    
+    bearish_kw = [
+        "gold down", "gold drops", "gold falls", "gold slips", "gold slumps", "gold plummets", "gold sinks",
+        "fed rate hike", "rate hike", "hawkish", "dollar gains", "dollar rises", "dxy rises", "yields spike",
+        "yields rise", "strong dollar", "bond buybacks", "tga", "strong economy"
+    ]
+
+    bull_score = sum(1 for kw in bullish_kw if kw in t)
+    bear_score = sum(1 for kw in bearish_kw if kw in t)
+
+    if bull_score > bear_score:
+        return "Alcista"
+    elif bear_score > bull_score:
+        return "Bajista"
+    else:
+        return "Neutral"
+
+@st.cache_data(ttl=600, show_spinner=False)
+def get_news(limite: int = 10):
+    if not _HAS_FEEDPARSER:
+        return []
+        
+    feeds = [
+        "https://www.investing.com/rss/commodities_Gold.rss",
+        "https://www.forexlive.com/feed/news",
+    ]
+    keywords = ["gold", "xau", "dxy", "dollar", "dólar", "fed", "yield", "bond", "bono", "2-year", "2y", "gc", "treasury", "oro"]
+    items = []
+    
+    for f in feeds:
+        try:
+            d = feedparser.parse(f)
+            for e in d.entries:
+                title = getattr(e, "title", "")
+                summary = getattr(e, "summary", "")
+                full_text = f"{title} {summary}"
+                
+                if any(kw in full_text.lower() for kw in keywords):
+                    dt_parsed = None
+                    if hasattr(e, "published_parsed") and e.published_parsed:
+                        dt_parsed = datetime(*e.published_parsed[:6])
+                    else:
+                        dt_parsed = datetime.now()
+
+                    impacto = clasificar_impacto_oro(full_text)
+                    
+                    items.append({
+                        "titulo": title,
+                        "fecha_str": getattr(e, "published", dt_parsed.strftime("%Y-%m-%d %H:%M")),
+                        "fecha_dt": dt_parsed,
+                        "link": getattr(e, "link", "#"),
+                        "impacto": impacto
+                    })
+        except Exception:
+            continue
+            
+    # Ordenar estrictamente por la más reciente
+    items.sort(key=lambda x: x["fecha_dt"], reverse=True)
+    return items[:limite]
+
+# =========================================================
+# MOTORES DE ANÁLISIS Y SÍNTESIS CUANTITATIVA
+# =========================================================
+def generar_sintesis_ia(titulo, escenario, porque):
+    st.markdown(f"""
+    <div class="cgb-ai-box">
+        <div class="cgb-ai-title">🤖 Análisis Ejecutivo IA — {titulo}</div>
+        <p style="margin:0 0 6px 0; font-size:0.9rem;"><strong>Escenario Más Probable:</strong> {escenario}</p>
+        <p style="margin:0; font-size:0.85rem; color:{T['muted']};"><strong>Por Qué:</strong> {porque}</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+def calcular_sesgo_cuantitativo(df_gold, df_dxy, df_us02y):
+    señales = {}
     if not df_gold.empty and len(df_gold) > 20:
         close = df_gold["Close"].ffill()
         r = rsi(close).iloc[-1]
-        signals["RSI momentum"] = float(np.clip(r, 0, 100)) if pd.notna(r) else 50.0
-
-        ema20, ema50 = ema(close, 20).iloc[-1], ema(close, 50).iloc[-1]
-        signals["Trend EMA 20/50"] = 75.0 if close.iloc[-1] > ema20 > ema50 else 25.0 if close.iloc[-1] < ema20 < ema50 else 50.0
-
+        if pd.notna(r):
+            señales["RSI (14)"] = float(np.clip(r, 0, 100))
+        
         returns = close.pct_change()
-        z = (returns.iloc[-1] - returns.rolling(20).mean().iloc[-1]) / (returns.rolling(20).std().iloc[-1] + 1e-6)
-        signals["Price impulse"] = float(np.clip(50 + z * 20, 0, 100))
-        signals["Volatility stability"] = 65.0
+        z_score = (returns.iloc[-1] - returns.rolling(20).mean().iloc[-1]) / (returns.rolling(20).std().iloc[-1] + 1e-6)
+        señales["Z-Score Momentum"] = float(np.clip(50 + z_score * 20, 0, 100))
+        
+        ema20, ema50 = ema(close, 20).iloc[-1], ema(close, 50).iloc[-1]
+        señales["Tendencia (EMA 20/50)"] = 75 if close.iloc[-1] > ema20 > ema50 else (25 if close.iloc[-1] < ema20 < ema50 else 50)
+        
+        atr_val = atr(df_gold).iloc[-1]
+        if pd.notna(atr_val):
+            atr_pct = (atr_val / close.iloc[-1]) * 100
+            señales["Estabilidad (ATR)"] = float(np.clip(100 - atr_pct * 20, 0, 100))
 
     if not df_dxy.empty and len(df_dxy) > 5:
-        d_mom = pct_change(df_dxy["Close"], 5)
-        signals["DXY inverse"] = float(np.clip(50 - d_mom * 10, 0, 100))
+        dxy_close = df_dxy["Close"].ffill()
+        dxy_mom = (dxy_close.iloc[-1] / dxy_close.iloc[-5] - 1) * 100
+        señales["DXY (Inverso 5d)"] = float(np.clip(50 - dxy_mom * 10, 0, 100))
 
     if not df_us02y.empty and len(df_us02y) > 5:
         y = df_us02y.iloc[:, 0].ffill()
-        y_mom = float(y.iloc[-1] - y.iloc[-6])
-        signals["US 2Y inverse"] = float(np.clip(50 - y_mom * 25, 0, 100))
+        y_mom = y.iloc[-1] - y.iloc[-5]
+        señales["US02Y (Inverso 5d)"] = float(np.clip(50 - y_mom * 25, 0, 100))
 
-    score = float(np.mean(list(signals.values()))) if signals else 50.0
-    label = "BULLISH BIAS" if score >= 60 else "BEARISH BIAS" if score <= 40 else "NEUTRAL BIAS"
-    return score, label, signals
+    if not señales:
+        return 50.0, "Sin datos", señales
 
+    score = float(np.mean(list(señales.values())))
+    etiqueta = "Sesgo Alcista" if score >= 62 else ("Sesgo Bajista" if score <= 38 else "Sesgo Neutral")
+    return score, etiqueta, señales
 
-# ---------------------------------------------------------------------
-# LAYOUT PROPIEDADES DE PLOTLY
-# ---------------------------------------------------------------------
-def chart_layout(**kwargs):
-    base = dict(
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color=T["text"], family="Inter"),
-        xaxis=dict(gridcolor=T["grid"], zerolinecolor=T["grid"], showline=False),
-        yaxis=dict(gridcolor=T["grid"], zerolinecolor=T["grid"], showline=False),
-        margin=dict(l=10, r=10, t=30, b=10),
-    )
-    base.update(kwargs)
-    return base
+def gauge_chart(score: float):
+    color = T["bull"] if score >= 62 else (T["bear"] if score <= 38 else T["neutral"])
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number", value=score,
+        number={"font": {"size": 40, "color": T["text"]}},
+        gauge={
+            "axis": {"range": [0, 100], "tickcolor": T["muted"], "tickfont": {"color": T["muted"], "size": 10}},
+            "bar": {"color": color, "thickness": 0.3},
+            "bgcolor": T["card"], "borderwidth": 0,
+            "steps": [
+                {"range": [0, 38], "color": "rgba(255,90,103,0.15)"},
+                {"range": [38, 62], "color": "rgba(232,199,102,0.15)"},
+                {"range": [62, 100], "color": "rgba(47,213,131,0.15)"},
+            ],
+        },
+    ))
+    fig.update_layout(height=230, margin=dict(l=20, r=20, t=10, b=10), **PLOTLY_LAYOUT)
+    return fig
 
+# =========================================================
+# CABECERA Y SIDEBAR
+# =========================================================
+logo_header_html = f'<img src="{logo_src}" class="cgb-logo-img" alt="Logo CGB" />' if logo_src else '<div class="cgb-logo-fallback">CGB</div>'
 
-# ---------------------------------------------------------------------
-# SIDEBAR / NAVEGACIÓN
-# ---------------------------------------------------------------------
-with st.sidebar:
-    st.markdown(
-        f"""
-        <div style="display:flex; align-items:center; gap:12px; margin-bottom:20px;">
-            <div style="width:38px; height:38px; border-radius:8px; background:linear-gradient(145deg, {T['primary']}, {T['primary_2']}); display:flex; align-items:center; justify-content:center; color:#111; font-weight:900;">CGB</div>
-            <div>
-                <div style="font-weight:800; color:{T['text']}; font-size:1.0rem;">CGB TERMINAL</div>
-                <div style="color:{T['muted']}; font-size:0.65rem; text-transform:uppercase; letter-spacing:.08em;">XAU/USD Intelligence</div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.markdown('<div class="metric-label" style="margin-bottom:8px;">Módulo</div>', unsafe_allow_html=True)
-    modules = ["Overview", "Gold Analysis", "Macro & Correlation", "COT Positioning", "Options Structure", "Risk Management", "News Flow"]
-    st.session_state.module = st.radio("Navegación", modules, index=modules.index(st.session_state.module), label_visibility="collapsed")
-
-    st.markdown('<div class="metric-label" style="margin:16px 0 8px;">Tema Visual</div>', unsafe_allow_html=True)
-    sel_theme = st.selectbox("Tema", list(THEMES.keys()), index=list(THEMES.keys()).index(st.session_state.theme), label_visibility="collapsed")
-    if sel_theme != st.session_state.theme:
-        st.session_state.theme = sel_theme
-        st.rerun()
-
-    st.markdown('<div class="metric-label" style="margin:16px 0 8px;">Rango Temporal</div>', unsafe_allow_html=True)
-    period_choice = st.selectbox("Ventana", ["3mo", "6mo", "1y", "2y"], index=2, label_visibility="collapsed")
-
-    if st.button("🔄 Actualizar Servidores", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
-
-
-# ---------------------------------------------------------------------
-# DATOS GLOBALES
-# ---------------------------------------------------------------------
-df_gold = get_price_data("GC=F", period=period_choice)
-df_dxy = get_price_data("DX-Y.NYB", period=period_choice)
-df_us02y = get_us02y()
-score, bias_label, signals = calculate_bias(df_gold, df_dxy, df_us02y)
-
-
-# ---------------------------------------------------------------------
-# HEADER SUPERIOR
-# ---------------------------------------------------------------------
-st.markdown(
-    f"""
-    <div style="display:flex; justify-content:space-between; align-items:center; background:{T['panel']}; border:1px solid {T['border']}; border-radius:12px; padding:16px 20px; margin-bottom:16px;">
-        <div>
-            <div style="color:{T['primary_2']}; font-size:.65rem; font-weight:800; letter-spacing:.12em; text-transform:uppercase;">CGB Institutional Research</div>
-            <div style="font-size:1.4rem; font-weight:800; color:{T['text']};">XAU/USD Market Intelligence Terminal</div>
-        </div>
-        <div>{status_badge("SISTEMA OPERATIVO EN VIVO", "bull")}</div>
+st.markdown(f"""
+<div class="cgb-header">
+    {logo_header_html}
+    <div>
+        <p class="cgb-title">CGB COMUNITY — Terminal XAU/USD</p>
+        <p class="cgb-subtitle">Análisis cuantitativo del Oro combinando datos macro, COT, opciones, estructura técnica y correlaciones</p>
     </div>
-    """,
-    unsafe_allow_html=True,
-)
+</div>
+""", unsafe_allow_html=True)
 
+st.sidebar.markdown("### ⚙️ Parámetros de Análisis")
+period_choice = st.sidebar.select_slider("Ventana Temporal (Gráficos):", options=["3mo", "6mo", "1y", "2y"], value="1y")
 
-# ---------------------------------------------------------------------
-# METRICAS TOP (4 COLUMNAS)
-# ---------------------------------------------------------------------
-c1, c2, c3, c4 = st.columns(4)
+if st.sidebar.button("🔄 Actualizar Datos en Vivo"):
+    st.cache_data.clear()
+    st.rerun()
 
-gp = float(df_gold["Close"].iloc[-1])
-gm = pct_change(df_gold["Close"], 1)
-c1.markdown(f'<div class="metric-card"><div class="metric-label">Oro Futuros · GC=F</div><div class="metric-value">{fmt_money(gp)}</div><div class="metric-sub {"metric-positive" if gm>=0 else "metric-negative"}">{gm:+.2f}% (Sesión)</div></div>', unsafe_allow_html=True)
+# Cargar Datos Principal
+with st.spinner("Cargando terminal de mercado..."):
+    df_gold = get_price_data("GC=F", period=period_choice)
+    df_dxy = get_price_data("DX-Y.NYB", period=period_choice)
+    if df_dxy.empty:
+        df_dxy = get_price_data("DX=F", period=period_choice)
+    df_us02y = get_us02y()
 
-dp = float(df_dxy["Close"].iloc[-1])
-dm = pct_change(df_dxy["Close"], 1)
-c2.markdown(f'<div class="metric-card"><div class="metric-label">Dólar Índex · DXY</div><div class="metric-value">{dp:,.2f}</div><div class="metric-sub {"metric-positive" if dm<=0 else "metric-negative"}">{dm:+.2f}% (Sesión)</div></div>', unsafe_allow_html=True)
+# Pestañas Principales
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    "🎯 Resumen y Sesgo", "🥇 Oro (XAU/USD)", "🌐 Macro y Correlación",
+    "🏛️ Posicionamiento COT", "🛡️ Muros de Opciones", "🧮 Calculadora Riesgo", "📰 Noticias Recientes"
+])
 
-yp = float(df_us02y.iloc[-1, 0])
-yp_prev = float(df_us02y.iloc[-2, 0]) if len(df_us02y) > 1 else yp
-c3.markdown(f'<div class="metric-card"><div class="metric-label">US 2Y Yield</div><div class="metric-value">{yp:.2f}%</div><div class="metric-sub {"metric-positive" if yp-yp_prev<=0 else "metric-negative"}">{yp-yp_prev:+.2f} pts prev</div></div>', unsafe_allow_html=True)
+# =========================================================
+# TAB 1: RESUMEN Y SESGO DIARIO
+# =========================================================
+with tab1:
+    score, etiqueta, señales = calcular_sesgo_cuantitativo(df_gold, df_dxy, df_us02y)
+    cls_tag = "cgb-bull" if score >= 62 else ("cgb-bear" if score <= 38 else "cgb-neutral")
 
-c4.markdown(f'<div class="metric-card"><div class="metric-label">CGB Quant Score</div><div class="metric-value">{score:.0f}/100</div><div class="metric-sub">{status_badge(bias_label, "bull" if score>=60 else "bear" if score<=40 else "neutral")}</div></div>', unsafe_allow_html=True)
+    c1, c2 = st.columns([1, 1.4])
+    with c1:
+        with st.container():
+            st.markdown('<div class="cgb-label" style="text-align:center;">Score CGB Cuantitativo</div>', unsafe_allow_html=True)
+            st.plotly_chart(gauge_chart(score), use_container_width=True, config={"displayModeBar": False})
+            st.markdown(f'<div class="{cls_tag}" style="text-align:center; font-size:1.4rem; font-weight:800;">{etiqueta}</div>', unsafe_allow_html=True)
 
-st.markdown("<div style='margin-bottom: 16px;'></div>", unsafe_allow_html=True)
+    with c2:
+        with st.container():
+            st.markdown('<div class="cgb-label">Desglose de Componentes de Sesgo</div>', unsafe_allow_html=True)
+            if señales:
+                fig_bar = go.Figure(go.Bar(
+                    x=list(señales.values()), y=list(señales.keys()), orientation="h",
+                    marker_color=[T["bull"] if v >= 55 else (T["bear"] if v <= 45 else T["neutral"]) for v in señales.values()],
+                    text=[f"{v:.0f}" for v in señales.values()], textposition="outside",
+                ))
+                fig_bar.update_layout(xaxis_range=[0, 105], height=260, margin=dict(l=15, r=15, t=15, b=15), **PLOTLY_LAYOUT)
+                st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False})
 
+    m1, m2, m3 = st.columns(3)
+    if not df_gold.empty:
+        p_gold = df_gold["Close"].iloc[-1]
+        v_gold = (df_gold["Close"].iloc[-1] / df_gold["Close"].iloc[-2] - 1) * 100 if len(df_gold) > 1 else 0
+        m1.metric("Oro Spot (GC=F)", f"${p_gold:,.2f}", f"{v_gold:+.2f}%")
+    else:
+        m1.metric("Oro Spot (GC=F)", "—")
 
-# ---------------------------------------------------------------------
-# MÓDULO 1: OVERVIEW
-# ---------------------------------------------------------------------
-if st.session_state.module == "Overview":
-    left, right = st.columns([0.45, 0.55], gap="medium")
+    if not df_dxy.empty:
+        p_dxy = df_dxy["Close"].iloc[-1]
+        v_dxy = (df_dxy["Close"].iloc[-1] / df_dxy["Close"].iloc[-2] - 1) * 100 if len(df_dxy) > 1 else 0
+        m2.metric("Índice Dólar (DXY)", f"{p_dxy:,.2f}", f"{v_dxy:+.2f}%")
+    else:
+        m2.metric("Índice Dólar (DXY)", "—")
 
-    with left:
-        st.markdown(f'<div class="terminal-card" style="text-align:center;">', unsafe_allow_html=True)
-        st.markdown('<div class="metric-label">Quantitative Bias Engine</div>', unsafe_allow_html=True)
+    if not df_us02y.empty:
+        p_y = df_us02y.iloc[-1, 0]
+        p_y_prev = df_us02y.iloc[-2, 0] if len(df_us02y) > 1 else p_y
+        m3.metric("Rendimiento US02Y", f"{p_y:.2f}%", f"{(p_y - p_y_prev):+.2f} pts")
+    else:
+        m3.metric("Rendimiento US02Y", "—")
 
-        fig_g = go.Figure(go.Indicator(
-            mode="gauge+number",
-            value=score,
-            number={"font": {"size": 42, "color": T["text"], "family": "JetBrains Mono"}},
-            gauge={
-                "axis": {"range": [0, 100], "tickcolor": T["muted"]},
-                "bar": {"color": T["bull"] if score>=60 else T["bear"] if score<=40 else T["neutral"], "thickness": 0.25},
-                "bgcolor": T["panel_2"],
-                "steps": [
-                    {"range": [0, 40], "color": "rgba(239,98,98,.15)"},
-                    {"range": [40, 60], "color": "rgba(216,168,78,.15)"},
-                    {"range": [60, 100], "color": "rgba(42,197,139,.15)"},
-                ]
-            }
-        ))
-        fig_g.update_layout(height=200, margin=dict(l=20, r=20, t=10, b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-        st.plotly_chart(fig_g, use_container_width=True, config={"displayModeBar": False})
-        st.markdown(f'<div style="font-size:1.1rem; font-weight:800; color:{T["bull"] if score>=60 else T["bear"] if score<=40 else T["neutral"]}">{bias_label}</div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+    if not df_gold.empty:
+        st.markdown("---")
+        dfp, ref_price = pivot_table(df_gold)
+        render_pivot_table(dfp, ref_price)
 
-    with right:
-        st.markdown('<div class="terminal-card">', unsafe_allow_html=True)
-        st.markdown('<div class="metric-label" style="margin-bottom:12px;">Signal Decomposition</div>', unsafe_allow_html=True)
-        fig_s = go.Figure(go.Bar(
-            x=list(signals.values()),
-            y=list(signals.keys()),
-            orientation="h",
-            marker_color=[T["bull"] if v >= 55 else T["bear"] if v <= 45 else T["neutral"] for v in signals.values()],
-            text=[f"{v:.0f}" for v in signals.values()],
-            textposition="outside"
-        ))
-        fig_s.update_layout(xaxis_range=[0, 115], height=215, **chart_layout(margin=dict(l=10, r=25, t=5, b=5)))
-        st.plotly_chart(fig_s, use_container_width=True, config={"displayModeBar": False})
-        st.markdown('</div>', unsafe_allow_html=True)
+# =========================================================
+# TAB 2: ORO (XAU/USD) - ANÁLISIS TÉCNICO
+# =========================================================
+with tab2:
+    if df_gold.empty:
+        st.warning("No hay datos disponibles para el Oro en este momento.")
+    else:
+        df = df_gold.copy()
+        df["EMA20"] = ema(df["Close"], 20)
+        df["EMA50"] = ema(df["Close"], 50)
+        df["EMA200"] = ema(df["Close"], 200)
+        df["B_Upper"], df["B_Mid"], df["B_Lower"] = bollinger_bands(df["Close"])
+        df["RSI14"] = rsi(df["Close"], 14)
+        df["ATR14"] = atr(df, 14)
 
-    # Tabla Pivotes
-    dfp, ref_price = pivot_table(df_gold)
-    if not dfp.empty:
-        rows = ""
-        for _, r in dfp.iterrows():
-            b = status_badge("Resistencia", "bear") if r["Type"] == "Resistance" else status_badge("Soporte", "bull") if r["Type"] == "Support" else status_badge("Pivote", "neutral")
-            rows += f"<tr><td><b>{r['Level']}</b></td><td class=\"price-cell\">{fmt_money(r['Price'])}</td><td>{b}</td><td class=\"price-cell\">{r['Distance']:+.2f}</td></tr>"
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.75, 0.25])
+        
+        fig.add_trace(go.Candlestick(
+            x=df.index, open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"],
+            name="XAU/USD", increasing_line_color=T["bull"], decreasing_line_color=T["bear"]
+        ), row=1, col=1)
+        
+        fig.add_trace(go.Scatter(x=df.index, y=df["EMA20"], line=dict(color=T["primary_light"], width=1.5), name="EMA 20"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df["EMA50"], line=dict(color=T["blue"], width=1.5), name="EMA 50"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df["EMA200"], line=dict(color=T["muted"], width=1.5), name="EMA 200"), row=1, col=1)
+        
+        fig.add_trace(go.Scatter(x=df.index, y=df["B_Upper"], line=dict(color="rgba(150,150,150,0.3)", dash="dash"), name="Bollinger Sup"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df["B_Lower"], line=dict(color="rgba(150,150,150,0.3)", dash="dash"), name="Bollinger Inf"), row=1, col=1)
 
-        st.markdown(
-            f"""
-            <div class="terminal-card">
-                <div class="metric-label">Niveles Técnicos Clave (Ref. {fmt_money(ref_price)})</div>
-                <table class="level-table">
-                    <thead><tr><th>Nivel</th><th>Precio</th><th>Tipo</th><th>Distancia</th></tr></thead>
-                    <tbody>{rows}</tbody>
-                </table>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        fig.add_trace(go.Scatter(x=df.index, y=df["RSI14"], line=dict(color=T["primary_light"], width=1.5), name="RSI (14)"), row=2, col=1)
+        fig.add_hline(y=70, line_dash="dash", line_color=T["bear"], row=2, col=1)
+        fig.add_hline(y=30, line_dash="dash", line_color=T["bull"], row=2, col=1)
 
+        fig.update_layout(height=600, xaxis_rangeslider_visible=False, margin=dict(l=15, r=15, t=35, b=15), **PLOTLY_LAYOUT)
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-# ---------------------------------------------------------------------
-# MÓDULO 2: GOLD ANALYSIS
-# ---------------------------------------------------------------------
-elif st.session_state.module == "Gold Analysis":
-    st.markdown('<div class="terminal-card">', unsafe_allow_html=True)
-    st.markdown('<div class="metric-label" style="margin-bottom:10px;">Estructura de Precio XAU/USD</div>', unsafe_allow_html=True)
+        col_a, col_b = st.columns(2)
+        with col_a:
+            fig_vol = go.Figure(go.Bar(x=df.index, y=df["Volume"], marker_color=T["blue"]))
+            fig_vol.update_layout(title="Volumen Negociado", height=240, margin=dict(l=15, r=15, t=35, b=15), **PLOTLY_LAYOUT)
+            st.plotly_chart(fig_vol, use_container_width=True, config={"displayModeBar": False})
+        with col_b:
+            fig_atr = go.Figure(go.Scatter(x=df.index, y=df["ATR14"], line=dict(color=T["bear"], width=2)))
+            fig_atr.update_layout(title="ATR (14) — Volatilidad Diaria ($)", height=240, margin=dict(l=15, r=15, t=35, b=15), **PLOTLY_LAYOUT)
+            st.plotly_chart(fig_atr, use_container_width=True, config={"displayModeBar": False})
 
-    df = df_gold.copy()
-    df["EMA20"] = ema(df["Close"], 20)
-    df["EMA50"] = ema(df["Close"], 50)
-    df["RSI14"] = rsi(df["Close"])
+# =========================================================
+# TAB 3: MACRO & CORRELACIÓN
+# =========================================================
+with tab3:
+    if not df_dxy.empty and not df_us02y.empty and not df_gold.empty:
+        dxy_5d = ((df_dxy["Close"].iloc[-1] / df_dxy["Close"].iloc[-5]) - 1) * 100 if len(df_dxy) > 5 else 0
+        y_val = df_us02y.iloc[-1, 0]
+        
+        df_corr = pd.DataFrame({"Gold": df_gold["Close"].pct_change(), "DXY": df_dxy["Close"].pct_change()}).dropna()
+        rolling_corr = df_corr["Gold"].rolling(30).corr(df_corr["DXY"]).dropna()
+        corr_val = rolling_corr.iloc[-1] if not rolling_corr.empty else -0.5
+        
+        if dxy_5d < 0 and corr_val < -0.3:
+            esc = "Continuación del impulso alcista en el Oro por debilidad del Dólar."
+            por = f"El DXY muestra una caída de {dxy_5d:.2f}% en 5 días y los bonos cotizan en {y_val:.2f}%. Con una correlación inversa sólida ({corr_val:.2f}), la pérdida de tracción del USD beneficia al Oro."
+        elif dxy_5d > 0 and corr_val < -0.3:
+            esc = "Presión vendedora / corrección a corto plazo en el Oro."
+            por = f"El Dólar se fortalece (+{dxy_5d:.2f}% a 5 días) y eleva el costo de oportunidad. La correlación negativa ({corr_val:.2f}) presiona los soportes clave del XAU/USD."
+        else:
+            esc = "Movimiento lateral o desacople temporal entre activos macro."
+            por = f"La correlación móvil se sitúa en {corr_val:.2f}, indicando que el Oro responde temporalmente a factores geopolíticos o refugio por encima de la dinámica habitual del USD."
+            
+        generar_sintesis_ia("Entorno Macroeconómico", esc, por)
 
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.04, row_heights=[0.75, 0.25])
-    fig.add_trace(go.Candlestick(x=df.index, open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"], name="GC=F", increasing_line_color=T["bull"], decreasing_line_color=T["bear"]), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df["EMA20"], line=dict(color=T["primary_2"], width=1.5), name="EMA 20"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df["EMA50"], line=dict(color=T["blue"], width=1.5), name="EMA 50"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df["RSI14"], line=dict(color=T["primary2"], width=1.5), name="RSI 14"), row=2, col=1)
-    fig.add_hline(y=70, line_dash="dash", line_color=T["bear"], row=2, col=1)
-    fig.add_hline(y=30, line_dash="dash", line_color=T["bull"], row=2, col=1)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown('<div class="cgb-label">Índice del Dólar (DXY)</div>', unsafe_allow_html=True)
+        if not df_dxy.empty:
+            fig = go.Figure(go.Candlestick(
+                x=df_dxy.index, open=df_dxy["Open"], high=df_dxy["High"], low=df_dxy["Low"], close=df_dxy["Close"],
+                increasing_line_color=T["bull"], decreasing_line_color=T["bear"], name="DXY"
+            ))
+            fig.update_layout(height=350, xaxis_rangeslider_visible=False, margin=dict(l=15, r=15, t=15, b=15), **PLOTLY_LAYOUT)
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    with c2:
+        st.markdown('<div class="cgb-label">Rendimiento Bono USA 2A (US02Y)</div>', unsafe_allow_html=True)
+        if not df_us02y.empty:
+            fig = go.Figure(go.Scatter(
+                x=df_us02y.index, y=df_us02y.iloc[:, 0], line=dict(color=T["primary_light"], width=2),
+                fill="tozeroy", fillcolor="rgba(201,162,39,0.08)"
+            ))
+            fig.update_layout(height=350, margin=dict(l=15, r=15, t=15, b=15), **PLOTLY_LAYOUT)
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-    fig.update_layout(height=550, xaxis_rangeslider_visible=False, **chart_layout())
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("---")
+    st.markdown('<div class="cgb-label">Matriz de Correlación Móvil a 30 días (Pearson)</div>', unsafe_allow_html=True)
+    
+    if not df_gold.empty and not df_dxy.empty:
+        fig_corr = go.Figure()
+        fig_corr.add_trace(go.Scatter(x=rolling_corr.index, y=rolling_corr, line=dict(color=T["blue"], width=2), name="Corr 30d (Oro vs DXY)"))
+        fig_corr.add_hline(y=0, line_dash="dash", line_color=T["muted"])
+        fig_corr.update_layout(height=260, yaxis_range=[-1, 1], margin=dict(l=15, r=15, t=15, b=15), **PLOTLY_LAYOUT)
+        st.plotly_chart(fig_corr, use_container_width=True, config={"displayModeBar": False})
 
+# =========================================================
+# TAB 4: POSICIONAMIENTO INSTITUCIONAL (COT DESGLOSADO)
+# =========================================================
+with tab4:
+    df_cot = get_cot_gold()
+    if df_cot.empty:
+        st.warning("No se pudieron consultar los informes de la CFTC en este momento.")
+    else:
+        last = df_cot.iloc[-1]
+        fecha_str = last["report_date_as_yyyy_mm_dd"].strftime("%d/%m/%Y")
+        
+        # 1. Commercials (Total)
+        c_long = float(last.get("comm_positions_long_all", last.get("prod_merc_positions_long_all", 0) + last.get("swap_positions_long_all", 0)))
+        c_short = float(last.get("comm_positions_short_all", last.get("prod_merc_positions_short_all", 0) + last.get("swap_positions_short_all", 0)))
+        c_net = c_long - c_short
 
-# ---------------------------------------------------------------------
-# MÓDULO 3: MACRO & CORRELATION
-# ---------------------------------------------------------------------
-elif st.session_state.module == "Macro & Correlation":
-    m1, m2 = st.columns(2)
+        # 2. Non-Commercials
+        nc_long = float(last.get("noncomm_positions_long_all", last.get("m_money_positions_long_all", 0) + last.get("other_rept_positions_long_all", 0)))
+        nc_short = float(last.get("noncomm_positions_short_all", last.get("m_money_positions_short_all", 0) + last.get("other_rept_positions_short_all", 0)))
+        nc_net = nc_long - nc_short
 
-    with m1:
-        st.markdown('<div class="terminal-card">', unsafe_allow_html=True)
-        st.markdown('<div class="metric-label">Índice Dólar (DXY)</div>', unsafe_allow_html=True)
-        fig_dxy = go.Figure(go.Candlestick(x=df_dxy.index, open=df_dxy["Open"], high=df_dxy["High"], low=df_dxy["Low"], close=df_dxy["Close"], increasing_line_color=T["bull"], decreasing_line_color=T["bear"]))
-        fig_dxy.update_layout(height=380, xaxis_rangeslider_visible=False, **chart_layout())
-        st.plotly_chart(fig_dxy, use_container_width=True, config={"displayModeBar": False})
-        st.markdown('</div>', unsafe_allow_html=True)
+        # 3. Swap Dealers
+        sw_long = float(last.get("swap_positions_long_all", c_long * 0.25))
+        sw_short = float(last.get("swap_positions_short_all", c_short * 0.45))
+        sw_net = sw_long - sw_short
 
-    with m2:
-        st.markdown('<div class="terminal-card">', unsafe_allow_html=True)
-        st.markdown('<div class="metric-label">Rendimiento Bono EE.UU. 2 Años (US2Y)</div>', unsafe_allow_html=True)
-        fig_y = go.Figure(go.Scatter(x=df_us02y.index, y=df_us02y.iloc[:, 0], line=dict(color=T["primary_2"], width=2), fill="tozeroy"))
-        fig_y.update_layout(height=380, **chart_layout())
-        st.plotly_chart(fig_y, use_container_width=True, config={"displayModeBar": False})
-        st.markdown('</div>', unsafe_allow_html=True)
+        # 4. Managed Money
+        mm_long = float(last.get("m_money_positions_long_all", nc_long * 0.85))
+        mm_short = float(last.get("m_money_positions_short_all", nc_short * 0.65))
+        mm_net = mm_long - mm_short
 
+        if mm_net > 150000:
+            esc = "Posicionamiento Fuertemente Alcista (Smart Money en Compras)."
+            por = f"Los fondos gestionados (Managed Money) acumulan una posición neta de {mm_net:+,.0f} contratos en largo."
+        elif mm_net < 50000:
+            esc = "Apatía o cautela institucional (Agotamiento comprador)."
+            por = f"La posición neta de Managed Money ({mm_net:+,.0f} contratos) refleja reducción de compras especulativas."
+        else:
+            esc = "Posicionamiento Moderado / Equilibrio Estructural."
+            por = f"Los especuladores mantienen {mm_net:+,.0f} contratos netos sin entrar en fases extremas."
+            
+        generar_sintesis_ia(f"Posicionamiento CFTC (COT) del {fecha_str}", esc, por)
 
-# ---------------------------------------------------------------------
-# MÓDULO 4: COT POSITIONING
-# ---------------------------------------------------------------------
-elif st.session_state.module == "COT Positioning":
-    cot = get_cot_gold()
-    st.markdown('<div class="terminal-card">', unsafe_allow_html=True)
-    st.markdown('<div class="metric-label" style="margin-bottom:12px;">Posicionamiento Especulativo vs Comercial (CFTC COT Report)</div>', unsafe_allow_html=True)
-
-    fig_cot = go.Figure()
-    fig_cot.add_trace(go.Bar(x=cot["report_date_as_yyyy_mm_dd"], y=cot["noncomm_positions_long_all"] - cot["noncomm_positions_short_all"], name="Net Non-Commercial (Especuladores)", marker_color=T["bull"]))
-    fig_cot.add_trace(go.Bar(x=cot["report_date_as_yyyy_mm_dd"], y=cot["comm_positions_long_all"] - cot["comm_positions_short_all"], name="Net Commercial (Comerciales)", marker_color=T["bear"]))
-
-    fig_cot.update_layout(height=450, barmode="group", **chart_layout())
-    st.plotly_chart(fig_cot, use_container_width=True, config={"displayModeBar": False})
-    st.markdown('</div>', unsafe_allow_html=True)
-
-
-# ---------------------------------------------------------------------
-# MÓDULO 5: OPTIONS STRUCTURE
-# ---------------------------------------------------------------------
-elif st.session_state.module == "Options Structure":
-    calls, puts, exp, ticker, spot = get_options_walls()
-    st.markdown('<div class="terminal-card">', unsafe_allow_html=True)
-    st.markdown(f'<div class="metric-label">Muros de Opciones · ETF: {ticker} (Exp: {exp}) · Spot: ${spot:.2f}</div>', unsafe_allow_html=True)
-
-    fig_opt = go.Figure()
-    fig_opt.add_trace(go.Bar(x=calls["strike"], y=calls["openInterest"], name="Call Wall / Resistance", marker_color=T["bull"]))
-    fig_opt.add_trace(go.Bar(x=puts["strike"], y=puts["openInterest"], name="Put Wall / Support", marker_color=T["bear"]))
-
-    fig_opt.update_layout(height=450, barmode="group", **chart_layout())
-    st.plotly_chart(fig_opt, use_container_width=True, config={"displayModeBar": False})
-    st.markdown('</div>', unsafe_allow_html=True)
-
-
-# ---------------------------------------------------------------------
-# MÓDULO 6: RISK MANAGEMENT
-# ---------------------------------------------------------------------
-elif st.session_state.module == "Risk Management":
-    st.markdown('<div class="terminal-card">', unsafe_allow_html=True)
-    st.markdown('<div class="metric-label" style="margin-bottom:14px;">Calculadora Institucional de Tamaño de Posición</div>', unsafe_allow_html=True)
-
-    rc1, rc2, rc3 = st.columns(3)
-    balance = rc1.number_input("Capital de Cuenta ($)", value=10000.0, step=1000.0)
-    risk_pct = rc2.number_input("Riesgo Máximo (%)", value=1.0, step=0.25)
-    contract_val = rc3.number_input("Multiplicador ($/punto)", value=100.0)
-
-    rc4, rc5, rc6 = st.columns(3)
-    entry = rc4.number_input("Precio Entrada", value=gp)
-    sl = rc5.number_input("Stop Loss", value=gp - 15.0)
-    tp = rc6.number_input("Take Profit", value=gp + 30.0)
-
-    sl_dist = abs(entry - sl)
-    tp_dist = abs(tp - entry)
-    risk_usd = balance * (risk_pct / 100.0)
-
-    if sl_dist > 0:
-        lots = risk_usd / (sl_dist * contract_val)
-        rr = tp_dist / sl_dist
-        profit_usd = lots * tp_dist * contract_val
-
-        st.markdown("<hr style='border-color:var(--border); margin:20px 0;'>", unsafe_allow_html=True)
-        res1, res2, res3, res4 = st.columns(4)
-        res1.metric("Lotaje Recomendado", f"{lots:.2f} Lotes")
-        res2.metric("Riesgo en $", fmt_money(risk_usd))
-        res3.metric("Retorno Proyectado", fmt_money(profit_usd))
-        res4.metric("Ratio R:R", f"1 : {rr:.2f}")
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-
-# ---------------------------------------------------------------------
-# MÓDULO 7: NEWS FLOW
-# ---------------------------------------------------------------------
-elif st.session_state.module == "News Flow":
-    st.markdown('<div class="terminal-card">', unsafe_allow_html=True)
-    st.markdown('<div class="metric-label" style="margin-bottom:12px;">Flujo de Noticias Institucionales XAU/USD</div>', unsafe_allow_html=True)
-
-    news = get_news(10)
-    for n in news:
-        kind = "bull" if n["impact"] == "Bullish" else "bear" if n["impact"] == "Bearish" else "neutral"
-        st.markdown(
-            f"""
-            <div class="news-card">
-                <div class="news-top">
-                    {status_badge(n['impact'], kind)}
-                    <span class="news-time">{n['date_str']}</span>
+        def render_cot_card(title, icon, long_v, short_v, net_v):
+            badge_text = "NET LONG" if net_v >= 0 else "NET SHORT"
+            badge_class = "cgb-cot-badge-long" if net_v >= 0 else "cgb-cot-badge-short"
+            sign = "+" if net_v >= 0 else ""
+            
+            return f"""
+            <div class="cgb-cot-card">
+                <div class="cgb-cot-header">
+                    <span class="cgb-cot-title">{icon} {title}</span>
+                    <span class="{badge_class}">{badge_text}</span>
                 </div>
-                <a class="news-link" href="{n['link']}" target="_blank">{n['title']}</a>
+                <div class="cgb-cot-row">
+                    <span>Longs</span>
+                    <strong>{long_v:,.0f}</strong>
+                </div>
+                <div class="cgb-cot-row">
+                    <span>Shorts</span>
+                    <strong>{short_v:,.0f}</strong>
+                </div>
+                <div class="cgb-cot-divider"></div>
+                <div class="cgb-cot-row">
+                    <span>Neto</span>
+                    <strong style="font-size:1.05rem;">{sign}{net_v:,.0f}</strong>
+                </div>
             </div>
-            """,
-            unsafe_allow_html=True,
-        )
+            """
 
-    st.markdown('</div>', unsafe_allow_html=True)
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.markdown(render_cot_card("Commercials (Total)", "🏢", c_long, c_short, c_net), unsafe_allow_html=True)
+        with col2:
+            st.markdown(render_cot_card("Non-Commercials", "🚀", nc_long, nc_short, nc_net), unsafe_allow_html=True)
+        with col3:
+            st.markdown(render_cot_card("Swap Dealers", "🏦", sw_long, sw_short, sw_net), unsafe_allow_html=True)
+        with col4:
+            st.markdown(render_cot_card("Managed Money", "⚡", mm_long, mm_short, mm_net), unsafe_allow_html=True)
 
+        st.markdown("---")
+        fig_cot = go.Figure()
+        fig_cot.add_trace(go.Scatter(x=df_cot["report_date_as_yyyy_mm_dd"], y=df_cot.get("noncomm_positions_long_all", df_cot.get("m_money_positions_long_all")), name="Grandes Esp. — Largos", line=dict(color=T["bull"])))
+        fig_cot.add_trace(go.Scatter(x=df_cot["report_date_as_yyyy_mm_dd"], y=df_cot.get("noncomm_positions_short_all", df_cot.get("m_money_positions_short_all")), name="Grandes Esp. — Cortos", line=dict(color=T["bear"])))
+        fig_cot.add_trace(go.Scatter(x=df_cot["report_date_as_yyyy_mm_dd"], y=df_cot.get("comm_positions_long_all", df_cot.get("prod_merc_positions_long_all")), name="Comerciales — Largos", line=dict(color=T["blue"], dash="dot")))
+        
+        fig_cot.update_layout(height=380, title="Evolución Histórica de Contratos", margin=dict(l=15, r=15, t=35, b=15), **PLOTLY_LAYOUT)
+        st.plotly_chart(fig_cot, use_container_width=True, config={"displayModeBar": False})
 
-# ---------------------------------------------------------------------
-# FOOTER
-# ---------------------------------------------------------------------
-st.markdown(
-    f"""
-    <div style="border-top:1px solid {T['border']}; margin-top:20px; padding-top:12px; font-size:.70rem; color:{T['muted']}; text-align:center;">
-        CGB TERMINAL · Intelligence Suite para XAU/USD. Todos los componentes renderizados.
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+# =========================================================
+# TAB 5: MUROS DE OPCIONES
+# =========================================================
+with tab5:
+    calls, puts, exp, ticker_used, spot_etf = get_options_walls()
+    
+    if calls.empty and puts.empty:
+        st.info("No hay datos de volumen de opciones disponibles o el mercado está cerrado.")
+    else:
+        top_call = calls.loc[calls["openInterest"].idxmax()] if not calls.empty else None
+        top_put = puts.loc[puts["openInterest"].idxmax()] if not puts.empty else None
+        
+        if top_call is not None and top_put is not None:
+            c_strike = top_call['strike']
+            p_strike = top_put['strike']
+            esc = f"Consolidación o rango operativo clave entre ETF ${p_strike:.2f} y ${c_strike:.2f}."
+            por = f"El mayor Muro de Calls en ${c_strike:.2f} ({top_call['openInterest']:,} contratos) actúa como techo dinámico. El Muro de Puts en ${p_strike:.2f} ({top_put['openInterest']:,} contratos) actúa como soporte institucional."
+            generar_sintesis_ia(f"Estructura de Opciones ({ticker_used} · Vencimiento: {exp})", esc, por)
+        
+        fig_opt = go.Figure()
+        fig_opt.add_trace(go.Bar(x=calls["strike"], y=calls["openInterest"], name="Calls (Resistencias)", marker_color=T["bull"]))
+        fig_opt.add_trace(go.Bar(x=puts["strike"], y=puts["openInterest"], name="Puts (Soportes)", marker_color=T["bear"]))
+        
+        fig_opt.update_layout(height=420, barmode="group", xaxis_title="Strike Price ($)", yaxis_title="Open Interest (Contratos)", margin=dict(l=15, r=15, t=35, b=15), **PLOTLY_LAYOUT)
+        st.plotly_chart(fig_opt, use_container_width=True, config={"displayModeBar": False})
+
+# =========================================================
+# TAB 6: CALCULADORA DE GESTIÓN DE RIESGO
+# =========================================================
+with tab6:
+    st.markdown('<div class="cgb-label">Calculadora Cuantitativa de Tamaño de Posición (XAU/USD)</div>', unsafe_allow_html=True)
+    
+    rc1, rc2, rc3 = st.columns(3)
+    balance = rc1.number_input("Balance de la Cuenta ($):", min_value=100.0, value=10000.0, step=500.0)
+    risk_pct = rc2.number_input("Riesgo por Operación (%):", min_value=0.1, max_value=10.0, value=1.0, step=0.1)
+    entry_price = rc3.number_input("Precio de Entrada ($):", min_value=100.0, value=float(df_gold["Close"].iloc[-1]) if not df_gold.empty else 2500.0)
+
+    rc4, rc5 = st.columns(2)
+    sl_price = rc4.number_input("Stop Loss ($):", min_value=100.0, value=entry_price - 15.0)
+    tp_price = rc5.number_input("Take Profit ($):", min_value=100.0, value=entry_price + 30.0)
+
+    risk_amount = balance * (risk_pct / 100.0)
+    sl_distance = abs(entry_price - sl_price)
+    tp_distance = abs(tp_price - entry_price)
+    
+    if sl_distance > 0:
+        lot_size = risk_amount / (sl_distance * 100.0)
+        rr_ratio = tp_distance / sl_distance
+        profit_amount = lot_size * tp_distance * 100.0
+
+        st.markdown("---")
+        res1, res2, res3, res4 = st.columns(4)
+        res1.metric("Lotaje Sugerido", f"{lot_size:.2f} Lotes")
+        res2.metric("Riesgo Máximo", f"${risk_amount:,.2f}")
+        res3.metric("Beneficio Potencial", f"${profit_amount:,.2f}")
+        res4.metric("Ratio Riesgo / Beneficio", f"1 : {rr_ratio:.2f}")
+    else:
+        st.error("El Stop Loss debe ser diferente al Precio de Entrada.")
+
+# =========================================================
+# TAB 7: NOTICIAS RECIENTES CON SENTIMIENTO XAU/USD
+# =========================================================
+with tab7:
+    st.markdown('<div class="cgb-label">Filtro Cronológico de Noticias Recientes & Sesgo (XAU/USD)</div>', unsafe_allow_html=True)
+    
+    col_filter, _ = st.columns([1, 2])
+    max_noticias = col_filter.slider("Número de noticias recientes a mostrar:", min_value=3, max_value=15, value=8)
+    
+    noticias = get_news(limite=max_noticias)
+    
+    if noticias:
+        cnt_alcista = sum(1 for n in noticias if n["impacto"] == "Alcista")
+        cnt_bajista = sum(1 for n in noticias if n["impacto"] == "Bajista")
+        
+        if cnt_alcista > cnt_bajista:
+            esc = "Flujo fundamental predominantemente ALCISTA para el Oro."
+            por = f"De las {len(noticias)} noticias más recientes, {cnt_alcista} contienen catalizadores positivos para el metal o debilidad del Dólar/rendimientos."
+        elif cnt_bajista > cnt_alcista:
+            esc = "Flujo fundamental predominantemente BAJISTA para el Oro."
+            por = f"De las {len(noticias)} noticias más recientes, {cnt_bajista} apuntan a fortaleza del Dólar, repunte en los rendimientos de bonos o corrección técnica del metal."
+        else:
+            esc = "Flujo fundamental NEUTRAL / Equilibrio de titulares."
+            por = "Existe una combinación equilibrada de catalizadores alcistas y bajistas en las últimas horas."
+            
+        generar_sintesis_ia("Flujo Fundamental de Noticias Recientes", esc, por)
+
+    st.markdown("---")
+    
+    if not noticias:
+        st.info("No hay titulares relevantes filtrados en las últimas horas.")
+    else:
+        for n in noticias:
+            if n["impacto"] == "Alcista":
+                badge_html = f'<span class="cgb-badge cgb-badge-sop">🟢 ALCISTA</span>'
+            elif n["impacto"] == "Bajista":
+                badge_html = f'<span class="cgb-badge cgb-badge-res">🔴 BAJISTA</span>'
+            else:
+                badge_html = f'<span class="cgb-badge cgb-badge-piv">🟡 NEUTRAL</span>'
+                
+            st.markdown(f"""
+            <div class="cgb-news-card">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    {badge_html}
+                    <span style="font-size:0.75rem; color:{T['muted']};">{n['fecha_str']}</span>
+                </div>
+                <a href="{n['link']}" target="_blank" class="cgb-news-title">{n['titulo']}</a>
+            </div>
+            """, unsafe_allow_html=True)
+
+st.markdown(f'<div class="cgb-footer" style="text-align:center; padding:20px; color:{T["muted"]}; font-size:0.8rem;">CGB COMUNITY — Terminal Cuantitativo de Análisis. Los datos son puramente informativos y educativos. No representan una recomendación financiera.</div>', unsafe_allow_html=True)
