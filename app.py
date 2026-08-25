@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 """
 =========================================================
-CGB COMUNITY — Terminal Cuantitativo XAU/USD (Versión Pro)
+CGB COMUNITY — Terminal Cuantitativo XAU/USD (Versión Pro con Logo)
 =========================================================
 """
 
+import os
+import base64
 import time
 from datetime import datetime, timedelta
 
@@ -41,6 +43,18 @@ st.set_page_config(
 )
 
 # =========================================================
+# CARGA Y CODIFICACIÓN DEL LOGO (BASE64)
+# =========================================================
+def get_base64_image(image_path="logo.png"):
+    if os.path.exists(image_path):
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode("utf-8")
+    return ""
+
+logo_b64 = get_base64_image("logo.png")
+logo_src = f"data:image/png;base64,{logo_b64}" if logo_b64 else ""
+
+# =========================================================
 # GESTIÓN DE TEMAS VISUALES (ESTILOS Y COLORES)
 # =========================================================
 THEMES = {
@@ -66,12 +80,30 @@ THEMES = {
     }
 }
 
-# Sidebar - Selección de Tema
 st.sidebar.markdown("### 🎨 Personalización de Interfaz")
 theme_choice = st.sidebar.selectbox("Selecciona un tema visual:", list(THEMES.keys()))
 T = THEMES[theme_choice]
 
-# Inyección de CSS dinámico según el tema elegido
+# CSS con Marca de Agua de fondo e Imagen en Cabecera
+bg_watermark_css = f"""
+    .stApp::before {{
+        content: "";
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 600px;
+        height: 600px;
+        background-image: url('{logo_src}');
+        background-repeat: no-repeat;
+        background-position: center;
+        background-size: contain;
+        opacity: 0.04;
+        pointer-events: none;
+        z-index: 0;
+    }}
+""" if logo_b64 else ""
+
 st.markdown(f"""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
@@ -81,18 +113,24 @@ st.markdown(f"""
     #MainMenu, footer {{visibility: hidden;}}
     section[data-testid="stSidebar"] {{ background-color: {T['card']}; border-right: 1px solid {T['border']}; }}
 
+    {bg_watermark_css}
+
     .cgb-header {{
-        display: flex; align-items: center; gap: 16px;
-        padding: 20px 24px; margin-bottom: 20px;
+        display: flex; align-items: center; gap: 18px;
+        padding: 16px 24px; margin-bottom: 20px;
         background: linear-gradient(135deg, {T['card']} 0%, {T['bg']} 100%);
         border: 1px solid {T['border']}; border-radius: 14px;
         box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        position: relative; z-index: 1;
     }}
-    .cgb-logo {{
-        width: 48px; height: 48px; border-radius: 12px;
+    .cgb-logo-img {{
+        width: 52px; height: 52px; object-fit: contain; border-radius: 8px; flex-shrink: 0;
+    }}
+    .cgb-logo-fallback {{
+        width: 52px; height: 52px; border-radius: 12px;
         background: linear-gradient(135deg, {T['primary']} 0%, {T['primary_light']} 100%);
         display: flex; align-items: center; justify-content: center;
-        font-weight: 800; font-size: 1.2rem; color: #000; flex-shrink: 0;
+        font-weight: 800; font-size: 1.1rem; color: #000; flex-shrink: 0;
     }}
     .cgb-title {{ font-size: 1.5rem; font-weight: 800; color: {T['text']}; letter-spacing: -0.02em; margin: 0; }}
     .cgb-subtitle {{ color: {T['muted']}; font-size: 0.85rem; margin-top: 2px; }}
@@ -126,28 +164,21 @@ st.markdown(f"""
         letter-spacing: .06em; padding: 10px; border-bottom: 1px solid {T['border']}; font-weight: 700;
     }}
     .cgb-table td {{ padding: 10px; border-bottom: 1px solid {T['border']}; color: {T['text']}; }}
-    .cgb-badge {{
-        display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 0.72rem; font-weight: 700;
-    }}
+    .cgb-badge {{ display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 0.72rem; font-weight: 700; }}
     .cgb-badge-res {{ background: rgba(255,90,103,0.15); color: {T['bear']}; border: 1px solid rgba(255,90,103,0.35); }}
     .cgb-badge-sop {{ background: rgba(47,213,131,0.15); color: {T['bull']}; border: 1px solid rgba(47,213,131,0.35); }}
     .cgb-badge-piv {{ background: rgba(232,199,102,0.15); color: {T['neutral']}; border: 1px solid rgba(232,199,102,0.35); }}
 
     .stTabs [data-baseweb="tab-list"] {{ gap: 6px; border-bottom: 1px solid {T['border']}; }}
-    .stTabs [data-baseweb="tab"] {{
-        background-color: transparent; border-radius: 8px 8px 0 0; padding: 10px 18px;
-        color: {T['muted']}; font-weight: 600;
-    }}
+    .stTabs [data-baseweb="tab"] {{ background-color: transparent; border-radius: 8px 8px 0 0; padding: 10px 18px; color: {T['muted']}; font-weight: 600; }}
     .stTabs [aria-selected="true"] {{ color: {T['primary_light']} !important; border-bottom: 2px solid {T['primary']}; }}
 
-    div[data-testid="stMetric"] {{
-        background-color: {T['card']}; border: 1px solid {T['border']}; border-radius: 12px; padding: 14px 16px;
-    }}
+    div[data-testid="stMetric"] {{ background-color: {T['card']}; border: 1px solid {T['border']}; border-radius: 12px; padding: 14px 16px; }}
 </style>
 """, unsafe_allow_html=True)
 
 PLOTLY_LAYOUT = dict(
-    paper_bgcolor=T["card"], plot_bgcolor=T["card"], font_color=T["text"],
+    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color=T["text"],
     font_family="Inter",
     xaxis=dict(gridcolor=T["border"], zerolinecolor=T["border"]),
     yaxis=dict(gridcolor=T["border"], zerolinecolor=T["border"]),
@@ -211,7 +242,6 @@ def get_us02y() -> pd.DataFrame:
             return df[["Close"]]
     return pd.DataFrame()
 
-# Indicadores Técnicos
 def ema(series: pd.Series, span: int) -> pd.Series:
     return series.ewm(span=span, adjust=False).mean()
 
@@ -240,7 +270,6 @@ def bollinger_bands(series: pd.Series, window: int = 20, num_sd: int = 2):
     lower = sma - (std * num_sd)
     return upper, sma, lower
 
-# Tabla de Niveles Pivote
 def pivot_table(df: pd.DataFrame) -> tuple:
     if len(df) < 2:
         return pd.DataFrame(), 0.0
@@ -291,7 +320,6 @@ def render_pivot_table(dfp: pd.DataFrame, ref_price: float):
     """
     st.markdown(html, unsafe_allow_html=True)
 
-# COT (Commitments of Traders)
 @st.cache_data(ttl=1800, show_spinner=False)
 def get_cot_gold() -> pd.DataFrame:
     url = "https://publicreporting.cftc.gov/resource/6dca-aqww.json"
@@ -314,7 +342,6 @@ def get_cot_gold() -> pd.DataFrame:
     df = _retry(_fetch, tries=2)
     return df if df is not None else pd.DataFrame()
 
-# Opciones (Walls & Open Interest)
 @st.cache_data(ttl=1800, show_spinner=False)
 def get_options_walls(tickers=("GLD", "IAU")):
     for ticker in tickers:
@@ -347,7 +374,6 @@ def get_options_walls(tickers=("GLD", "IAU")):
             continue
     return pd.DataFrame(), pd.DataFrame(), None, None, None
 
-# Noticias RSS con Filtro Estricto (GC, XAUUSD, DXY, Dolar, US02Y, Bonos)
 @st.cache_data(ttl=900, show_spinner=False)
 def get_news():
     if not _HAS_FEEDPARSER:
@@ -364,7 +390,6 @@ def get_news():
             for e in d.entries:
                 title = getattr(e, "title", "").lower()
                 summary = getattr(e, "summary", "").lower()
-                # Filtrar estrictamente solo lo relevante
                 if any(kw in title or kw in summary for kw in keywords):
                     items.append({
                         "titulo": getattr(e, "title", ""),
@@ -445,11 +470,13 @@ def gauge_chart(score: float):
     return fig
 
 # =========================================================
-# CABECERA Y CONTROL SIDEBAR
+# CABECERA (CON LOGO OFICIAL) Y CONTROL SIDEBAR
 # =========================================================
+logo_header_html = f'<img src="{logo_src}" class="cgb-logo-img" alt="Logo CGB" />' if logo_b64 else '<div class="cgb-logo-fallback">CGB</div>'
+
 st.markdown(f"""
 <div class="cgb-header">
-    <div class="cgb-logo">CGB</div>
+    {logo_header_html}
     <div>
         <p class="cgb-title">CGB COMUNITY — Terminal XAU/USD</p>
         <p class="cgb-subtitle">Análisis cuantitativo del Oro combinando datos macro, COT, opciones, estructura técnica y correlaciones</p>
@@ -505,7 +532,6 @@ with tab1:
                 fig_bar.update_layout(xaxis_range=[0, 105], height=260, margin=dict(l=15, r=15, t=15, b=15), **PLOTLY_LAYOUT)
                 st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False})
 
-    # Métricas Clave Principales
     m1, m2, m3 = st.columns(3)
     if not df_gold.empty:
         p_gold = df_gold["Close"].iloc[-1]
@@ -528,7 +554,6 @@ with tab1:
     else:
         m3.metric("Rendimiento US02Y", "—")
 
-    # Pivotes Técnicos
     if not df_gold.empty:
         st.markdown("---")
         dfp, ref_price = pivot_table(df_gold)
@@ -584,7 +609,6 @@ with tab2:
 # TAB 3: MACRO & CORRELACIÓN CUANTITATIVA (CON IA)
 # =========================================================
 with tab3:
-    # 🤖 ANÁLISIS IA MACRO
     if not df_dxy.empty and not df_us02y.empty and not df_gold.empty:
         dxy_5d = ((df_dxy["Close"].iloc[-1] / df_dxy["Close"].iloc[-5]) - 1) * 100 if len(df_dxy) > 5 else 0
         y_val = df_us02y.iloc[-1, 0]
@@ -649,7 +673,6 @@ with tab4:
         com_net = last_cot.get("comm_positions_long_all", 0) - last_cot.get("comm_positions_short_all", 0)
         noncom_net = last_cot.get("noncomm_positions_long_all", 0) - last_cot.get("noncomm_positions_short_all", 0)
         
-        # 🤖 ANÁLISIS IA COT
         if noncom_net > 150000:
             esc = "Posicionamiento Institucional Fuertemente Alcista (Smart Money en Compras)."
             por = f"Los Grandes Especuladores (Fondos) acumulan una posición neta de {noncom_net:+,.0f} contratos en largo. El dinero institucional está respaldando la tendencia mientras los comerciales ejercen de contrapartida ({com_net:+,.0f})."
@@ -689,7 +712,6 @@ with tab5:
         top_call = calls.loc[calls["openInterest"].idxmax()] if not calls.empty else None
         top_put = puts.loc[puts["openInterest"].idxmax()] if not puts.empty else None
         
-        # 🤖 ANÁLISIS IA OPCIONES
         if top_call is not None and top_put is not None:
             c_strike = top_call['strike']
             p_strike = top_put['strike']
@@ -743,7 +765,6 @@ with tab6:
 with tab7:
     noticias = get_news()
     
-    # 🤖 ANÁLISIS IA NOTICIAS
     if noticias:
         cnt_gold = sum(1 for n in noticias if any(k in n['titulo'].lower() for k in ['gold', 'xau', 'oro', 'gc']))
         cnt_usd = sum(1 for n in noticias if any(k in n['titulo'].lower() for k in ['dxy', 'dollar', 'dólar', 'fed']))
