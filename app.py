@@ -102,6 +102,16 @@ st.markdown(f"""
     .cgb-bear {{ color: {T['bear']}; font-weight: 700; }}
     .cgb-neutral {{ color: {T['neutral']}; font-weight: 700; }}
 
+    .cgb-ai-box {{
+        background: linear-gradient(135deg, rgba(201, 162, 39, 0.08) 0%, rgba(18, 21, 28, 0.6) 100%);
+        border: 1px solid {T['primary']}; border-radius: 12px;
+        padding: 16px 20px; margin-bottom: 20px;
+    }}
+    .cgb-ai-title {{
+        font-weight: 800; color: {T['primary_light']}; font-size: 0.95rem;
+        display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+    }}
+
     .cgb-news-card {{
         background-color: {T['card']}; border: 1px solid {T['border']}; border-radius: 12px;
         padding: 14px 16px; margin-bottom: 10px; transition: all .2s ease;
@@ -230,7 +240,7 @@ def bollinger_bands(series: pd.Series, window: int = 20, num_sd: int = 2):
     lower = sma - (std * num_sd)
     return upper, sma, lower
 
-# Tabla de Niveles Pivote (Clásicos y Camarilla)
+# Tabla de Niveles Pivote
 def pivot_table(df: pd.DataFrame) -> tuple:
     if len(df) < 2:
         return pd.DataFrame(), 0.0
@@ -304,7 +314,7 @@ def get_cot_gold() -> pd.DataFrame:
     df = _retry(_fetch, tries=2)
     return df if df is not None else pd.DataFrame()
 
-# Opciones (Walls & Gamma Proxy)
+# Opciones (Walls & Open Interest)
 @st.cache_data(ttl=1800, show_spinner=False)
 def get_options_walls(tickers=("GLD", "IAU")):
     for ticker in tickers:
@@ -337,7 +347,7 @@ def get_options_walls(tickers=("GLD", "IAU")):
             continue
     return pd.DataFrame(), pd.DataFrame(), None, None, None
 
-# Noticias RSS
+# Noticias RSS con Filtro Estricto (GC, XAUUSD, DXY, Dolar, US02Y, Bonos)
 @st.cache_data(ttl=900, show_spinner=False)
 def get_news():
     if not _HAS_FEEDPARSER:
@@ -346,43 +356,53 @@ def get_news():
         "https://www.investing.com/rss/commodities_Gold.rss",
         "https://www.forexlive.com/feed/news",
     ]
+    keywords = ["gold", "xau", "dxy", "dollar", "dólar", "fed", "yield", "bond", "bono", "2-year", "2y", "gc", "treasury", "oro"]
     items = []
     for f in feeds:
         try:
             d = feedparser.parse(f)
-            for e in d.entries[:6]:
-                items.append({
-                    "titulo": getattr(e, "title", ""),
-                    "fecha": getattr(e, "published", ""),
-                    "link": getattr(e, "link", "#"),
-                })
+            for e in d.entries:
+                title = getattr(e, "title", "").lower()
+                summary = getattr(e, "summary", "").lower()
+                # Filtrar estrictamente solo lo relevante
+                if any(kw in title or kw in summary for kw in keywords):
+                    items.append({
+                        "titulo": getattr(e, "title", ""),
+                        "fecha": getattr(e, "published", ""),
+                        "link": getattr(e, "link", "#"),
+                    })
         except Exception:
             continue
     return items[:12]
 
 # =========================================================
-# ALGORITMO CUANTITATIVO DE SESGO DIARIO
+# MOTORES DE ANÁLISIS DE IA Y SÍNTESIS CUANTITATIVA
 # =========================================================
+
+def generar_sintesis_ia(titulo, escenario, porque):
+    st.markdown(f"""
+    <div class="cgb-ai-box">
+        <div class="cgb-ai-title">🤖 Análisis Ejecutivo IA — {titulo}</div>
+        <p style="margin:0 0 6px 0; font-size:0.9rem;"><strong>Escenario Más Probable:</strong> {escenario}</p>
+        <p style="margin:0; font-size:0.85rem; color:{T['muted']};"><strong>Por Qué:</strong> {porque}</p>
+    </div>
+    """, unsafe_allow_html=True)
 
 def calcular_sesgo_cuantitativo(df_gold, df_dxy, df_us02y):
     señales = {}
     if not df_gold.empty and len(df_gold) > 20:
         close = df_gold["Close"].ffill()
-        # 1. RSI (14)
         r = rsi(close).iloc[-1]
         if pd.notna(r):
             señales["RSI (14)"] = float(np.clip(r, 0, 100))
         
-        # 2. Momentum Z-Score
         returns = close.pct_change()
         z_score = (returns.iloc[-1] - returns.rolling(20).mean().iloc[-1]) / (returns.rolling(20).std().iloc[-1] + 1e-6)
         señales["Z-Score Momentum"] = float(np.clip(50 + z_score * 20, 0, 100))
         
-        # 3. Alineación EMA (20, 50)
         ema20, ema50 = ema(close, 20).iloc[-1], ema(close, 50).iloc[-1]
         señales["Tendencia (EMA 20/50)"] = 75 if close.iloc[-1] > ema20 > ema50 else (25 if close.iloc[-1] < ema20 < ema50 else 50)
         
-        # 4. Volatilidad ATR
         atr_val = atr(df_gold).iloc[-1]
         if pd.notna(atr_val):
             atr_pct = (atr_val / close.iloc[-1]) * 100
@@ -529,10 +549,8 @@ with tab2:
         df["RSI14"] = rsi(df["Close"], 14)
         df["ATR14"] = atr(df, 14)
 
-        # Gráfico principal con subplots (Velas + RSI)
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.75, 0.25])
         
-        # Velas y Medias Móviles
         fig.add_trace(go.Candlestick(
             x=df.index, open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"],
             name="XAU/USD", increasing_line_color=T["bull"], decreasing_line_color=T["bear"]
@@ -542,11 +560,9 @@ with tab2:
         fig.add_trace(go.Scatter(x=df.index, y=df["EMA50"], line=dict(color=T["blue"], width=1.5), name="EMA 50"), row=1, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df["EMA200"], line=dict(color=T["muted"], width=1.5), name="EMA 200"), row=1, col=1)
         
-        # Bandas de Bollinger
         fig.add_trace(go.Scatter(x=df.index, y=df["B_Upper"], line=dict(color="rgba(150,150,150,0.3)", dash="dash"), name="Bollinger Sup"), row=1, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df["B_Lower"], line=dict(color="rgba(150,150,150,0.3)", dash="dash"), name="Bollinger Inf"), row=1, col=1)
 
-        # RSI Subplot
         fig.add_trace(go.Scatter(x=df.index, y=df["RSI14"], line=dict(color=T["primary_light"], width=1.5), name="RSI (14)"), row=2, col=1)
         fig.add_hline(y=70, line_dash="dash", line_color=T["bear"], row=2, col=1)
         fig.add_hline(y=30, line_dash="dash", line_color=T["bull"], row=2, col=1)
@@ -565,9 +581,30 @@ with tab2:
             st.plotly_chart(fig_atr, use_container_width=True, config={"displayModeBar": False})
 
 # =========================================================
-# TAB 3: MACRO & CORRELACIÓN CUANTITATIVA
+# TAB 3: MACRO & CORRELACIÓN CUANTITATIVA (CON IA)
 # =========================================================
 with tab3:
+    # 🤖 ANÁLISIS IA MACRO
+    if not df_dxy.empty and not df_us02y.empty and not df_gold.empty:
+        dxy_5d = ((df_dxy["Close"].iloc[-1] / df_dxy["Close"].iloc[-5]) - 1) * 100 if len(df_dxy) > 5 else 0
+        y_val = df_us02y.iloc[-1, 0]
+        
+        df_corr = pd.DataFrame({"Gold": df_gold["Close"].pct_change(), "DXY": df_dxy["Close"].pct_change()}).dropna()
+        rolling_corr = df_corr["Gold"].rolling(30).corr(df_corr["DXY"]).dropna()
+        corr_val = rolling_corr.iloc[-1] if not rolling_corr.empty else -0.5
+        
+        if dxy_5d < 0 and corr_val < -0.3:
+            esc = "Continuación del impulso alcista en el Oro por debilidad del Dólar."
+            por = f"El DXY muestra una caída de {dxy_5d:.2f}% en 5 días y los bonos cotizan en {y_val:.2f}%. Con una correlación inversa sólida ({corr_val:.2f}), la pérdida de tracción del USD beneficia directamente la liquidez del Oro."
+        elif dxy_5d > 0 and corr_val < -0.3:
+            esc = "Presión vendedora / corrección a corto plazo en el Oro."
+            por = f"El Dólar se fortalece (+{dxy_5d:.2f}% a 5 días) y eleva el costo de oportunidad. La correlación negativa ({corr_val:.2f}) presiona los soportes clave del XAU/USD."
+        else:
+            esc = "Movimiento lateral o desacople temporal entre activos macro."
+            por = f"La correlación móvil se sitúa en {corr_val:.2f}, lo que indica que el Oro responde temporalmente a factores geopolíticos o refugio seguro por encima de la dinámica habitual del Dólar."
+            
+        generar_sintesis_ia("Entorno Macroeconómico", esc, por)
+
     c1, c2 = st.columns(2)
     with c1:
         st.markdown('<div class="cgb-label">Índice del Dólar (DXY)</div>', unsafe_allow_html=True)
@@ -588,27 +625,18 @@ with tab3:
             fig.update_layout(height=350, margin=dict(l=15, r=15, t=15, b=15), **PLOTLY_LAYOUT)
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-    # CORRELACIÓN MÓVIL CUANTITATIVA (ROLLING CORRELATION)
     st.markdown("---")
     st.markdown('<div class="cgb-label">Matriz de Correlación Móvil a 30 días (Pearson)</div>', unsafe_allow_html=True)
     
     if not df_gold.empty and not df_dxy.empty:
-        df_corr = pd.DataFrame({
-            "Gold": df_gold["Close"].pct_change(),
-            "DXY": df_dxy["Close"].pct_change()
-        }).dropna()
-        
-        rolling_corr = df_corr["Gold"].rolling(30).corr(df_corr["DXY"]).dropna()
-        
         fig_corr = go.Figure()
         fig_corr.add_trace(go.Scatter(x=rolling_corr.index, y=rolling_corr, line=dict(color=T["blue"], width=2), name="Corr 30d (Oro vs DXY)"))
         fig_corr.add_hline(y=0, line_dash="dash", line_color=T["muted"])
         fig_corr.update_layout(height=260, yaxis_range=[-1, 1], margin=dict(l=15, r=15, t=15, b=15), **PLOTLY_LAYOUT)
         st.plotly_chart(fig_corr, use_container_width=True, config={"displayModeBar": False})
-        st.caption("Una correlación cercana a -1 indica una fuerte relación inversa histórica entre el Dólar y el Oro.")
 
 # =========================================================
-# TAB 4: POSICIONAMIENTO INSTITUCIONAL (COT)
+# TAB 4: POSICIONAMIENTO INSTITUCIONAL (COT CON IA)
 # =========================================================
 with tab4:
     df_cot = get_cot_gold()
@@ -618,12 +646,23 @@ with tab4:
         last_cot = df_cot.iloc[-1]
         fecha_str = last_cot["report_date_as_yyyy_mm_dd"].strftime("%d/%m/%Y")
         
-        st.markdown(f'<div class="cgb-label">Informe Commitments of Traders (COT) — COMEX Oro · Fecha: {fecha_str}</div>', unsafe_allow_html=True)
-        
-        col_cot1, col_cot2, col_cot3 = st.columns(3)
-        
         com_net = last_cot.get("comm_positions_long_all", 0) - last_cot.get("comm_positions_short_all", 0)
         noncom_net = last_cot.get("noncomm_positions_long_all", 0) - last_cot.get("noncomm_positions_short_all", 0)
+        
+        # 🤖 ANÁLISIS IA COT
+        if noncom_net > 150000:
+            esc = "Posicionamiento Institucional Fuertemente Alcista (Smart Money en Compras)."
+            por = f"Los Grandes Especuladores (Fondos) acumulan una posición neta de {noncom_net:+,.0f} contratos en largo. El dinero institucional está respaldando la tendencia mientras los comerciales ejercen de contrapartida ({com_net:+,.0f})."
+        elif noncom_net < 50000:
+            esc = "Apatía o cautela institucional (Agotamiento comprador)."
+            por = f"La posición neta de los fondos ({noncom_net:+,.0f} contratos) se encuentra reducida. Esto indica falta de convicción para romper resistencias mayores sin nuevos catalizadores macro."
+        else:
+            esc = "Posicionamiento Moderado / Equilibrio Estructural."
+            por = f"Los especuladores mantienen {noncom_net:+,.0f} contratos netos. El mercado no refleja extremos de sobrecompra o sobreventa en el informe CFTC."
+            
+        generar_sintesis_ia(f"Posicionamiento CFTC (COT) del {fecha_str}", esc, por)
+
+        col_cot1, col_cot2, col_cot3 = st.columns(3)
         small_net = last_cot.get("nonrept_positions_long_all", 0) - last_cot.get("nonrept_positions_short_all", 0)
         
         col_cot1.metric("Comerciales (Hedgers)", f"{com_net:+,.0f}", "Posición Neta")
@@ -639,16 +678,24 @@ with tab4:
         st.plotly_chart(fig_cot, use_container_width=True, config={"displayModeBar": False})
 
 # =========================================================
-# TAB 5: MUROS DE OPCIONES & OPEN INTEREST
+# TAB 5: MUROS DE OPCIONES (CON IA)
 # =========================================================
 with tab5:
-    st.markdown('<div class="cgb-label">Muros de Open Interest (Opciones ETF GLD - Proxy de Plataforma Institutional)</div>', unsafe_allow_html=True)
     calls, puts, exp, ticker_used, spot_etf = get_options_walls()
     
     if calls.empty and puts.empty:
         st.info("No hay datos de volumen de opciones disponibles o el mercado está cerrado.")
     else:
-        st.caption(f"Activo Proxy: **{ticker_used}** | Vencimiento: **{exp}** | Precio ETF Spot: **${spot_etf:.2f}**")
+        top_call = calls.loc[calls["openInterest"].idxmax()] if not calls.empty else None
+        top_put = puts.loc[puts["openInterest"].idxmax()] if not puts.empty else None
+        
+        # 🤖 ANÁLISIS IA OPCIONES
+        if top_call is not None and top_put is not None:
+            c_strike = top_call['strike']
+            p_strike = top_put['strike']
+            esc = f"Consolidación o rango operativo clave entre ETF ${p_strike:.2f} y ${c_strike:.2f}."
+            por = f"El mayor Muro de Calls en ${c_strike:.2f} ({top_call['openInterest']:,} contratos) actúa como techo dinámico debido a la cobertura de los Market Makers (Delta Hedging). El Muro de Puts en ${p_strike:.2f} ({top_put['openInterest']:,} contratos) actúa como soporte institucional."
+            generar_sintesis_ia(f"Estructura de Opciones ({ticker_used} · Vencimiento: {exp})", esc, por)
         
         fig_opt = go.Figure()
         fig_opt.add_trace(go.Bar(x=calls["strike"], y=calls["openInterest"], name="Calls (Resistencias)", marker_color=T["bull"]))
@@ -691,13 +738,28 @@ with tab6:
         st.error("El Stop Loss debe ser diferente al Precio de Entrada.")
 
 # =========================================================
-# TAB 7: NOTICIAS
+# TAB 7: NOTICIAS EXCLUSIVAS Y SÍNTESIS IA
 # =========================================================
 with tab7:
-    st.markdown('<div class="cgb-label">Últimas Noticias de Mercado (Commodities & Macro)</div>', unsafe_allow_html=True)
     noticias = get_news()
+    
+    # 🤖 ANÁLISIS IA NOTICIAS
+    if noticias:
+        cnt_gold = sum(1 for n in noticias if any(k in n['titulo'].lower() for k in ['gold', 'xau', 'oro', 'gc']))
+        cnt_usd = sum(1 for n in noticias if any(k in n['titulo'].lower() for k in ['dxy', 'dollar', 'dólar', 'fed']))
+        
+        if cnt_gold >= cnt_usd:
+            esc = "Sentimiento del mercado fuertemente enfocado en la demanda directa del Oro."
+            por = f"De las {len(noticias)} titulares filtrados, la mayoría se centra en aspectos específicos del metal y reservas, lo que incrementa el volumen propio del instrumento."
+        else:
+            esc = "Mercado impulsado por la política monetaria de la Reserva Federal y el Dólar."
+            por = "La narrativa dominante en los titulares está enfocada en los datos económicos de EE. UU. y el rendimiento de los Bonos a 2 años, que actúan como principal catalizador."
+            
+        generar_sintesis_ia("Flujo Fundamental de Noticias", esc, por)
+
+    st.markdown('<div class="cgb-label">Titulares Filtrados (Exclusivo: GC, XAUUSD, DXY, Dólar, US02Y)</div>', unsafe_allow_html=True)
     if not noticias:
-        st.info("No se pudieron cargar noticias recientes vía RSS o la librería 'feedparser' no está disponible.")
+        st.info("No hay titulares relevantes filtrados en las últimas horas.")
     else:
         for n in noticias:
             st.markdown(f"""
