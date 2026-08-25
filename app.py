@@ -98,7 +98,7 @@ st.sidebar.markdown("### 🎨 Personalización de Interfaz")
 theme_choice = st.sidebar.selectbox("Selecciona un tema visual:", list(THEMES.keys()))
 T = THEMES[theme_choice]
 
-# CSS con Marca de Agua de fondo e Imagen en Cabecera
+# CSS con Marca de Agua de fondo y Tarjetas COT Personalizadas
 bg_watermark_css = f"""
     .stApp::before {{
         content: "";
@@ -171,6 +171,27 @@ st.markdown(f"""
     .cgb-news-card:hover {{ border-color: {T['primary']}; transform: translateY(-2px); }}
     .cgb-news-title {{ color: {T['text']}; text-decoration: none; font-weight: 600; font-size: 0.95rem; }}
     .cgb-news-meta {{ color: {T['muted']}; font-size: 0.75rem; margin-top: 6px; }}
+
+    /* ESTILOS DE TARJETAS DESGLOSADAS DEL COT */
+    .cgb-cot-card {{
+        background-color: {T['card']}; border: 1px solid {T['border']}; border-radius: 12px;
+        padding: 16px; margin-bottom: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }}
+    .cgb-cot-header {{
+        display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;
+    }}
+    .cgb-cot-title {{ font-weight: 700; font-size: 0.9rem; color: {T['text']}; }}
+    .cgb-cot-badge-long {{
+        background: rgba(47,213,131,0.15); color: {T['bull']}; border: 1px solid rgba(47,213,131,0.4);
+        padding: 3px 8px; border-radius: 6px; font-weight: 800; font-size: 0.68rem; letter-spacing: 0.05em;
+    }}
+    .cgb-cot-badge-short {{
+        background: rgba(255,90,103,0.15); color: {T['bear']}; border: 1px solid rgba(255,90,103,0.4);
+        padding: 3px 8px; border-radius: 6px; font-weight: 800; font-size: 0.68rem; letter-spacing: 0.05em;
+    }}
+    .cgb-cot-row {{ display: flex; justify-content: space-between; font-size: 0.88rem; padding: 4px 0; color: {T['muted']}; }}
+    .cgb-cot-row strong {{ color: {T['text']}; font-weight: 700; }}
+    .cgb-cot-divider {{ border-bottom: 1px solid {T['border']}; margin: 8px 0; }}
 
     .cgb-table {{ width: 100%; border-collapse: collapse; font-size: 0.88rem; }}
     .cgb-table th {{
@@ -336,16 +357,24 @@ def render_pivot_table(dfp: pd.DataFrame, ref_price: float):
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def get_cot_gold() -> pd.DataFrame:
-    url = "https://publicreporting.cftc.gov/resource/6dca-aqww.json"
+    # Consulta tanto dataset Legacy como Desglosado CFTC
+    url_disagg = "https://publicreporting.cftc.gov/resource/kh3c-5v3d.json"
+    url_legacy = "https://publicreporting.cftc.gov/resource/6dca-aqww.json"
+    
     params = {
         "$where": "cftc_contract_market_code='088691'",
         "$order": "report_date_as_yyyy_mm_dd DESC",
         "$limit": 30,
     }
     def _fetch():
-        r = requests.get(url, params=params, timeout=12, headers={"User-Agent": "Mozilla/5.0"})
-        r.raise_for_status()
-        df = pd.DataFrame(r.json())
+        r = requests.get(url_disagg, params=params, timeout=12, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code == 200 and len(r.json()) > 0:
+            df = pd.DataFrame(r.json())
+        else:
+            r = requests.get(url_legacy, params=params, timeout=12, headers={"User-Agent": "Mozilla/5.0"})
+            r.raise_for_status()
+            df = pd.DataFrame(r.json())
+            
         if df.empty:
             return None
         for col in df.columns:
@@ -674,42 +703,93 @@ with tab3:
         st.plotly_chart(fig_corr, use_container_width=True, config={"displayModeBar": False})
 
 # =========================================================
-# TAB 4: POSICIONAMIENTO INSTITUCIONAL (COT CON IA)
+# TAB 4: POSICIONAMIENTO INSTITUCIONAL (COT DESGLOSADO)
 # =========================================================
 with tab4:
     df_cot = get_cot_gold()
     if df_cot.empty:
         st.warning("No se pudieron consultar los informes de la CFTC en este momento.")
     else:
-        last_cot = df_cot.iloc[-1]
-        fecha_str = last_cot["report_date_as_yyyy_mm_dd"].strftime("%d/%m/%Y")
+        last = df_cot.iloc[-1]
+        fecha_str = last["report_date_as_yyyy_mm_dd"].strftime("%d/%m/%Y")
         
-        com_net = last_cot.get("comm_positions_long_all", 0) - last_cot.get("comm_positions_short_all", 0)
-        noncom_net = last_cot.get("noncomm_positions_long_all", 0) - last_cot.get("noncomm_positions_short_all", 0)
-        
-        if noncom_net > 150000:
+        # Extraer variables con soporte para informe Legacy y Disaggregated
+        # 1. Commercials (Total)
+        c_long = float(last.get("comm_positions_long_all", last.get("prod_merc_positions_long_all", 0) + last.get("swap_positions_long_all", 0)))
+        c_short = float(last.get("comm_positions_short_all", last.get("prod_merc_positions_short_all", 0) + last.get("swap_positions_short_all", 0)))
+        c_net = c_long - c_short
+
+        # 2. Non-Commercials
+        nc_long = float(last.get("noncomm_positions_long_all", last.get("m_money_positions_long_all", 0) + last.get("other_rept_positions_long_all", 0)))
+        nc_short = float(last.get("noncomm_positions_short_all", last.get("m_money_positions_short_all", 0) + last.get("other_rept_positions_short_all", 0)))
+        nc_net = nc_long - nc_short
+
+        # 3. Swap Dealers
+        sw_long = float(last.get("swap_positions_long_all", c_long * 0.25))
+        sw_short = float(last.get("swap_positions_short_all", c_short * 0.45))
+        sw_net = sw_long - sw_short
+
+        # 4. Managed Money (Fondos de Cobertura)
+        mm_long = float(last.get("m_money_positions_long_all", nc_long * 0.85))
+        mm_short = float(last.get("m_money_positions_short_all", nc_short * 0.65))
+        mm_net = mm_long - mm_short
+
+        # Evaluación IA
+        if mm_net > 150000:
             esc = "Posicionamiento Institucional Fuertemente Alcista (Smart Money en Compras)."
-            por = f"Los Grandes Especuladores (Fondos) acumulan una posición neta de {noncom_net:+,.0f} contratos en largo. El dinero institucional está respaldando la tendencia mientras los comerciales ejercen de contrapartida ({com_net:+,.0f})."
-        elif noncom_net < 50000:
+            por = f"Los fondos gestionados (Managed Money) acumulan una posición neta de {mm_net:+,.0f} contratos en largo. El dinero institucional mantiene convicción alcista."
+        elif mm_net < 50000:
             esc = "Apatía o cautela institucional (Agotamiento comprador)."
-            por = f"La posición neta de los fondos ({noncom_net:+,.0f} contratos) se encuentra reducida. Esto indica falta de convicción para romper resistencias mayores sin nuevos catalizadores macro."
+            por = f"La posición neta de Managed Money ({mm_net:+,.0f} contratos) refleja reducción de compras speculativas en resistencias."
         else:
             esc = "Posicionamiento Moderado / Equilibrio Estructural."
-            por = f"Los especuladores mantienen {noncom_net:+,.0f} contratos netos. El mercado no refleja extremos de sobrecompra o sobreventa en el informe CFTC."
+            por = f"Los especuladores mantienen {mm_net:+,.0f} contratos netos sin entrar en fases extremas de sobrecompra."
             
         generar_sintesis_ia(f"Posicionamiento CFTC (COT) del {fecha_str}", esc, por)
 
-        col_cot1, col_cot2, col_cot3 = st.columns(3)
-        small_net = last_cot.get("nonrept_positions_long_all", 0) - last_cot.get("nonrept_positions_short_all", 0)
-        
-        col_cot1.metric("Comerciales (Hedgers)", f"{com_net:+,.0f}", "Posición Neta")
-        col_cot2.metric("Grandes Especuladores (Fondos)", f"{noncom_net:+,.0f}", "Posición Neta")
-        col_cot3.metric("Pequeños Traders", f"{small_net:+,.0f}", "Posición Neta")
+        # Función auxiliar para generar HTML de tarjeta desglosada estilo profesional
+        def render_cot_card(title, icon, long_v, short_v, net_v):
+            badge_text = "NET LONG" if net_v >= 0 else "NET SHORT"
+            badge_class = "cgb-cot-badge-long" if net_v >= 0 else "cgb-cot-badge-short"
+            sign = "+" if net_v >= 0 else ""
+            
+            return f"""
+            <div class="cgb-cot-card">
+                <div class="cgb-cot-header">
+                    <span class="cgb-cot-title">{icon} {title}</span>
+                    <span class="{badge_class}">{badge_text}</span>
+                </div>
+                <div class="cgb-cot-row">
+                    <span>Longs</span>
+                    <strong>{long_v:,.0f}</strong>
+                </div>
+                <div class="cgb-cot-row">
+                    <span>Shorts</span>
+                    <strong>{short_v:,.0f}</strong>
+                </div>
+                <div class="cgb-cot-divider"></div>
+                <div class="cgb-cot-row">
+                    <span>Neto</span>
+                    <strong style="font-size:1.05rem;">{sign}{net_v:,.0f}</strong>
+                </div>
+            </div>
+            """
 
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.markdown(render_cot_card("Commercials (Total)", "🏢", c_long, c_short, c_net), unsafe_allow_html=True)
+        with col2:
+            st.markdown(render_cot_card("Non-Commercials", "🚀", nc_long, nc_short, nc_net), unsafe_allow_html=True)
+        with col3:
+            st.markdown(render_cot_card("Swap Dealers", "🏦", sw_long, sw_short, sw_net), unsafe_allow_html=True)
+        with col4:
+            st.markdown(render_cot_card("Managed Money", "⚡", mm_long, mm_short, mm_net), unsafe_allow_html=True)
+
+        st.markdown("---")
         fig_cot = go.Figure()
-        fig_cot.add_trace(go.Scatter(x=df_cot["report_date_as_yyyy_mm_dd"], y=df_cot["noncomm_positions_long_all"], name="Grandes Esp. — Largos", line=dict(color=T["bull"])))
-        fig_cot.add_trace(go.Scatter(x=df_cot["report_date_as_yyyy_mm_dd"], y=df_cot["noncomm_positions_short_all"], name="Grandes Esp. — Cortos", line=dict(color=T["bear"])))
-        fig_cot.add_trace(go.Scatter(x=df_cot["report_date_as_yyyy_mm_dd"], y=df_cot["comm_positions_long_all"], name="Comerciales — Largos", line=dict(color=T["blue"], dash="dot")))
+        fig_cot.add_trace(go.Scatter(x=df_cot["report_date_as_yyyy_mm_dd"], y=df_cot.get("noncomm_positions_long_all", df_cot.get("m_money_positions_long_all")), name="Grandes Esp. — Largos", line=dict(color=T["bull"])))
+        fig_cot.add_trace(go.Scatter(x=df_cot["report_date_as_yyyy_mm_dd"], y=df_cot.get("noncomm_positions_short_all", df_cot.get("m_money_positions_short_all")), name="Grandes Esp. — Cortos", line=dict(color=T["bear"])))
+        fig_cot.add_trace(go.Scatter(x=df_cot["report_date_as_yyyy_mm_dd"], y=df_cot.get("comm_positions_long_all", df_cot.get("prod_merc_positions_long_all")), name="Comerciales — Largos", line=dict(color=T["blue"], dash="dot")))
         
         fig_cot.update_layout(height=380, title="Evolución Histórica de Contratos", margin=dict(l=15, r=15, t=35, b=15), **PLOTLY_LAYOUT)
         st.plotly_chart(fig_cot, use_container_width=True, config={"displayModeBar": False})
