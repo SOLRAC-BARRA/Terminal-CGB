@@ -43,7 +43,7 @@ st.set_page_config(
 )
 
 # =========================================================
-# CARGA Y CODIFICACIÓN DEL LOGO (BASE64) CON SOPORTE JPG/PNG
+# CARGA Y CODIFICACIÓN DEL LOGO (BASE64)
 # =========================================================
 def get_logo_data_uri():
     candidates = ["logo.jpg", "logo.jpeg", "logo.png"]
@@ -98,7 +98,7 @@ st.sidebar.markdown("### 🎨 Personalización de Interfaz")
 theme_choice = st.sidebar.selectbox("Selecciona un tema visual:", list(THEMES.keys()))
 T = THEMES[theme_choice]
 
-# CSS con Marca de Agua de fondo y Tarjetas COT Personalizadas
+# CSS con Marca de Agua de fondo y Tarjetas Personalizadas
 bg_watermark_css = f"""
     .stApp::before {{
         content: "";
@@ -169,7 +169,7 @@ st.markdown(f"""
         padding: 14px 16px; margin-bottom: 10px; transition: all .2s ease;
     }}
     .cgb-news-card:hover {{ border-color: {T['primary']}; transform: translateY(-2px); }}
-    .cgb-news-title {{ color: {T['text']}; text-decoration: none; font-weight: 600; font-size: 0.95rem; }}
+    .cgb-news-title {{ color: {T['text']}; text-decoration: none; font-weight: 600; font-size: 0.95rem; line-height: 1.4; }}
     .cgb-news-meta {{ color: {T['muted']}; font-size: 0.75rem; margin-top: 6px; }}
 
     /* ESTILOS DE TARJETAS DESGLOSADAS DEL COT */
@@ -244,7 +244,7 @@ def _retry(fn, tries: int = 3, delay: float = 1.0):
     return None
 
 # =========================================================
-# EXTRACCIÓN Y CÁLCULO DE DATOS
+# EXTRACCIÓN Y CÁLCULO DE DATOS PRECIOS
 # =========================================================
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -355,9 +355,11 @@ def render_pivot_table(dfp: pd.DataFrame, ref_price: float):
     """
     st.markdown(html, unsafe_allow_html=True)
 
+# =========================================================
+# OBTENCIÓN COT EN TIEMPO REAL
+# =========================================================
 @st.cache_data(ttl=1800, show_spinner=False)
 def get_cot_gold() -> pd.DataFrame:
-    # Consulta tanto dataset Legacy como Desglosado CFTC
     url_disagg = "https://publicreporting.cftc.gov/resource/kh3c-5v3d.json"
     url_legacy = "https://publicreporting.cftc.gov/resource/6dca-aqww.json"
     
@@ -385,6 +387,9 @@ def get_cot_gold() -> pd.DataFrame:
     df = _retry(_fetch, tries=2)
     return df if df is not None else pd.DataFrame()
 
+# =========================================================
+# OPCIONES Y MUROS
+# =========================================================
 @st.cache_data(ttl=1800, show_spinner=False)
 def get_options_walls(tickers=("GLD", "IAU")):
     for ticker in tickers:
@@ -417,36 +422,81 @@ def get_options_walls(tickers=("GLD", "IAU")):
             continue
     return pd.DataFrame(), pd.DataFrame(), None, None, None
 
-@st.cache_data(ttl=900, show_spinner=False)
-def get_news():
+# =========================================================
+# FUNCIONES DE NOTICIAS RECIENTES Y SENTIMIENTO XAU/USD
+# =========================================================
+def clasificar_impacto_oro(texto: str) -> str:
+    """Clasifica si la noticia es Alcista, Bajista o Neutral para el XAU/USD."""
+    t = texto.lower()
+    
+    bullish_kw = [
+        "gold up", "gold gains", "gold rises", "gold surges", "gold rallies", "gold climbs", "gold jumps", "gold high",
+        "fed rate cut", "rate cut", "dovish", "dollar drops", "dollar falls", "dxy falls", "yields drop", 
+        "yields fall", "safe haven", "inflation surges", "geopolitical tension", "sanctions", "trade war", "war"
+    ]
+    
+    bearish_kw = [
+        "gold down", "gold drops", "gold falls", "gold slips", "gold slumps", "gold plummets", "gold sinks",
+        "fed rate hike", "rate hike", "hawkish", "dollar gains", "dollar rises", "dxy rises", "yields spike",
+        "yields rise", "strong dollar", "bond buybacks", "tga", "strong economy"
+    ]
+
+    bull_score = sum(1 for kw in bullish_kw if kw in t)
+    bear_score = sum(1 for kw in bearish_kw if kw in t)
+
+    if bull_score > bear_score:
+        return "Alcista"
+    elif bear_score > bull_score:
+        return "Bajista"
+    else:
+        return "Neutral"
+
+@st.cache_data(ttl=600, show_spinner=False)
+def get_news(limite: int = 10):
     if not _HAS_FEEDPARSER:
         return []
+        
     feeds = [
         "https://www.investing.com/rss/commodities_Gold.rss",
         "https://www.forexlive.com/feed/news",
     ]
     keywords = ["gold", "xau", "dxy", "dollar", "dólar", "fed", "yield", "bond", "bono", "2-year", "2y", "gc", "treasury", "oro"]
     items = []
+    
     for f in feeds:
         try:
             d = feedparser.parse(f)
             for e in d.entries:
-                title = getattr(e, "title", "").lower()
-                summary = getattr(e, "summary", "").lower()
-                if any(kw in title or kw in summary for kw in keywords):
+                title = getattr(e, "title", "")
+                summary = getattr(e, "summary", "")
+                full_text = f"{title} {summary}"
+                
+                if any(kw in full_text.lower() for kw in keywords):
+                    dt_parsed = None
+                    if hasattr(e, "published_parsed") and e.published_parsed:
+                        dt_parsed = datetime(*e.published_parsed[:6])
+                    else:
+                        dt_parsed = datetime.now()
+
+                    impacto = clasificar_impacto_oro(full_text)
+                    
                     items.append({
-                        "titulo": getattr(e, "title", ""),
-                        "fecha": getattr(e, "published", ""),
+                        "titulo": title,
+                        "fecha_str": getattr(e, "published", dt_parsed.strftime("%Y-%m-%d %H:%M")),
+                        "fecha_dt": dt_parsed,
                         "link": getattr(e, "link", "#"),
+                        "impacto": impacto
                     })
         except Exception:
             continue
-    return items[:12]
+            
+    # Ordenar estrictamente por la más reciente
+    items.sort(key=lambda x: x["fecha_dt"], reverse=True)
+    return items[:limite]
 
 # =========================================================
-# MOTORES DE ANÁLISIS DE IA Y SÍNTESIS CUANTITATIVA
+# MOTORES DE ANÁLISIS Y SÍNTESIS CUANTITATIVA
 # =========================================================
-
 def generar_sintesis_ia(titulo, escenario, porque):
     st.markdown(f"""
     <div class="cgb-ai-box">
@@ -513,7 +563,7 @@ def gauge_chart(score: float):
     return fig
 
 # =========================================================
-# CABECERA (CON LOGO OFICIAL) Y CONTROL SIDEBAR
+# CABECERA Y SIDEBAR
 # =========================================================
 logo_header_html = f'<img src="{logo_src}" class="cgb-logo-img" alt="Logo CGB" />' if logo_src else '<div class="cgb-logo-fallback">CGB</div>'
 
@@ -527,7 +577,6 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Filtros Globales en Sidebar
 st.sidebar.markdown("### ⚙️ Parámetros de Análisis")
 period_choice = st.sidebar.select_slider("Ventana Temporal (Gráficos):", options=["3mo", "6mo", "1y", "2y"], value="1y")
 
@@ -546,7 +595,7 @@ with st.spinner("Cargando terminal de mercado..."):
 # Pestañas Principales
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "🎯 Resumen y Sesgo", "🥇 Oro (XAU/USD)", "🌐 Macro y Correlación",
-    "🏛️ Posicionamiento COT", "🛡️ Muros de Opciones", "🧮 Calculadora Riesgo", "📰 Noticias"
+    "🏛️ Posicionamiento COT", "🛡️ Muros de Opciones", "🧮 Calculadora Riesgo", "📰 Noticias Recientes"
 ])
 
 # =========================================================
@@ -603,7 +652,7 @@ with tab1:
         render_pivot_table(dfp, ref_price)
 
 # =========================================================
-# TAB 2: ORO (XAU/USD) - ANÁLISIS TÉCNICO COMPLETO
+# TAB 2: ORO (XAU/USD) - ANÁLISIS TÉCNICO
 # =========================================================
 with tab2:
     if df_gold.empty:
@@ -649,7 +698,7 @@ with tab2:
             st.plotly_chart(fig_atr, use_container_width=True, config={"displayModeBar": False})
 
 # =========================================================
-# TAB 3: MACRO & CORRELACIÓN CUANTITATIVA (CON IA)
+# TAB 3: MACRO & CORRELACIÓN
 # =========================================================
 with tab3:
     if not df_dxy.empty and not df_us02y.empty and not df_gold.empty:
@@ -662,13 +711,13 @@ with tab3:
         
         if dxy_5d < 0 and corr_val < -0.3:
             esc = "Continuación del impulso alcista en el Oro por debilidad del Dólar."
-            por = f"El DXY muestra una caída de {dxy_5d:.2f}% en 5 días y los bonos cotizan en {y_val:.2f}%. Con una correlación inversa sólida ({corr_val:.2f}), la pérdida de tracción del USD beneficia directamente la liquidez del Oro."
+            por = f"El DXY muestra una caída de {dxy_5d:.2f}% en 5 días y los bonos cotizan en {y_val:.2f}%. Con una correlación inversa sólida ({corr_val:.2f}), la pérdida de tracción del USD beneficia al Oro."
         elif dxy_5d > 0 and corr_val < -0.3:
             esc = "Presión vendedora / corrección a corto plazo en el Oro."
             por = f"El Dólar se fortalece (+{dxy_5d:.2f}% a 5 días) y eleva el costo de oportunidad. La correlación negativa ({corr_val:.2f}) presiona los soportes clave del XAU/USD."
         else:
             esc = "Movimiento lateral o desacople temporal entre activos macro."
-            por = f"La correlación móvil se sitúa en {corr_val:.2f}, lo que indica que el Oro responde temporalmente a factores geopolíticos o refugio seguro por encima de la dinámica habitual del Dólar."
+            por = f"La correlación móvil se sitúa en {corr_val:.2f}, indicando que el Oro responde temporalmente a factores geopolíticos o refugio por encima de la dinámica habitual del USD."
             
         generar_sintesis_ia("Entorno Macroeconómico", esc, por)
 
@@ -713,7 +762,6 @@ with tab4:
         last = df_cot.iloc[-1]
         fecha_str = last["report_date_as_yyyy_mm_dd"].strftime("%d/%m/%Y")
         
-        # Extraer variables con soporte para informe Legacy y Disaggregated
         # 1. Commercials (Total)
         c_long = float(last.get("comm_positions_long_all", last.get("prod_merc_positions_long_all", 0) + last.get("swap_positions_long_all", 0)))
         c_short = float(last.get("comm_positions_short_all", last.get("prod_merc_positions_short_all", 0) + last.get("swap_positions_short_all", 0)))
@@ -729,25 +777,23 @@ with tab4:
         sw_short = float(last.get("swap_positions_short_all", c_short * 0.45))
         sw_net = sw_long - sw_short
 
-        # 4. Managed Money (Fondos de Cobertura)
+        # 4. Managed Money
         mm_long = float(last.get("m_money_positions_long_all", nc_long * 0.85))
         mm_short = float(last.get("m_money_positions_short_all", nc_short * 0.65))
         mm_net = mm_long - mm_short
 
-        # Evaluación IA
         if mm_net > 150000:
-            esc = "Posicionamiento Institucional Fuertemente Alcista (Smart Money en Compras)."
-            por = f"Los fondos gestionados (Managed Money) acumulan una posición neta de {mm_net:+,.0f} contratos en largo. El dinero institucional mantiene convicción alcista."
+            esc = "Posicionamiento Fuertemente Alcista (Smart Money en Compras)."
+            por = f"Los fondos gestionados (Managed Money) acumulan una posición neta de {mm_net:+,.0f} contratos en largo."
         elif mm_net < 50000:
             esc = "Apatía o cautela institucional (Agotamiento comprador)."
-            por = f"La posición neta de Managed Money ({mm_net:+,.0f} contratos) refleja reducción de compras speculativas en resistencias."
+            por = f"La posición neta de Managed Money ({mm_net:+,.0f} contratos) refleja reducción de compras especulativas."
         else:
             esc = "Posicionamiento Moderado / Equilibrio Estructural."
-            por = f"Los especuladores mantienen {mm_net:+,.0f} contratos netos sin entrar en fases extremas de sobrecompra."
+            por = f"Los especuladores mantienen {mm_net:+,.0f} contratos netos sin entrar en fases extremas."
             
         generar_sintesis_ia(f"Posicionamiento CFTC (COT) del {fecha_str}", esc, por)
 
-        # Función auxiliar para generar HTML de tarjeta desglosada estilo profesional
         def render_cot_card(title, icon, long_v, short_v, net_v):
             badge_text = "NET LONG" if net_v >= 0 else "NET SHORT"
             badge_class = "cgb-cot-badge-long" if net_v >= 0 else "cgb-cot-badge-short"
@@ -795,7 +841,7 @@ with tab4:
         st.plotly_chart(fig_cot, use_container_width=True, config={"displayModeBar": False})
 
 # =========================================================
-# TAB 5: MUROS DE OPCIONES (CON IA)
+# TAB 5: MUROS DE OPCIONES
 # =========================================================
 with tab5:
     calls, puts, exp, ticker_used, spot_etf = get_options_walls()
@@ -810,7 +856,7 @@ with tab5:
             c_strike = top_call['strike']
             p_strike = top_put['strike']
             esc = f"Consolidación o rango operativo clave entre ETF ${p_strike:.2f} y ${c_strike:.2f}."
-            por = f"El mayor Muro de Calls en ${c_strike:.2f} ({top_call['openInterest']:,} contratos) actúa como techo dinámico debido a la cobertura de los Market Makers (Delta Hedging). El Muro de Puts en ${p_strike:.2f} ({top_put['openInterest']:,} contratos) actúa como soporte institucional."
+            por = f"El mayor Muro de Calls en ${c_strike:.2f} ({top_call['openInterest']:,} contratos) actúa como techo dinámico. El Muro de Puts en ${p_strike:.2f} ({top_put['openInterest']:,} contratos) actúa como soporte institucional."
             generar_sintesis_ia(f"Estructura de Opciones ({ticker_used} · Vencimiento: {exp})", esc, por)
         
         fig_opt = go.Figure()
@@ -821,7 +867,7 @@ with tab5:
         st.plotly_chart(fig_opt, use_container_width=True, config={"displayModeBar": False})
 
 # =========================================================
-# TAB 6: CALCULADORA CUANTITATIVA DE GESTIÓN DE RIESGO
+# TAB 6: CALCULADORA DE GESTIÓN DE RIESGO
 # =========================================================
 with tab6:
     st.markdown('<div class="cgb-label">Calculadora Cuantitativa de Tamaño de Posición (XAU/USD)</div>', unsafe_allow_html=True)
@@ -854,33 +900,52 @@ with tab6:
         st.error("El Stop Loss debe ser diferente al Precio de Entrada.")
 
 # =========================================================
-# TAB 7: NOTICIAS EXCLUSIVAS Y SÍNTESIS IA
+# TAB 7: NOTICIAS RECIENTES CON SENTIMIENTO XAU/USD
 # =========================================================
 with tab7:
-    noticias = get_news()
+    st.markdown('<div class="cgb-label">Filtro Cronológico de Noticias Recientes & Sesgo (XAU/USD)</div>', unsafe_allow_html=True)
+    
+    col_filter, _ = st.columns([1, 2])
+    max_noticias = col_filter.slider("Número de noticias recientes a mostrar:", min_value=3, max_value=15, value=8)
+    
+    noticias = get_news(limite=max_noticias)
     
     if noticias:
-        cnt_gold = sum(1 for n in noticias if any(k in n['titulo'].lower() for k in ['gold', 'xau', 'oro', 'gc']))
-        cnt_usd = sum(1 for n in noticias if any(k in n['titulo'].lower() for k in ['dxy', 'dollar', 'dólar', 'fed']))
+        cnt_alcista = sum(1 for n in noticias if n["impacto"] == "Alcista")
+        cnt_bajista = sum(1 for n in noticias if n["impacto"] == "Bajista")
         
-        if cnt_gold >= cnt_usd:
-            esc = "Sentimiento del mercado fuertemente enfocado en la demanda directa del Oro."
-            por = f"De las {len(noticias)} titulares filtrados, la mayoría se centra en aspectos específicos del metal y reservas, lo que incrementa el volumen propio del instrumento."
+        if cnt_alcista > cnt_bajista:
+            esc = "Flujo fundamental predominantemente ALCISTA para el Oro."
+            por = f"De las {len(noticias)} noticias más recientes, {cnt_alcista} contienen catalizadores positivos para el metal o debilidad del Dólar/rendimientos."
+        elif cnt_bajista > cnt_alcista:
+            esc = "Flujo fundamental predominantemente BAJISTA para el Oro."
+            por = f"De las {len(noticias)} noticias más recientes, {cnt_bajista} apuntan a fortaleza del Dólar, repunte en los rendimientos de bonos o corrección técnica del metal."
         else:
-            esc = "Mercado impulsado por la política monetaria de la Reserva Federal y el Dólar."
-            por = "La narrativa dominante en los titulares está enfocada en los datos económicos de EE. UU. y el rendimiento de los Bonos a 2 años, que actúan como principal catalizador."
+            esc = "Flujo fundamental NEUTRAL / Equilibrio de titulares."
+            por = "Existe una combinación equilibrada de catalizadores alcistas y bajistas en las últimas horas."
             
-        generar_sintesis_ia("Flujo Fundamental de Noticias", esc, por)
+        generar_sintesis_ia("Flujo Fundamental de Noticias Recientes", esc, por)
 
-    st.markdown('<div class="cgb-label">Titulares Filtrados (Exclusivo: GC, XAUUSD, DXY, Dólar, US02Y)</div>', unsafe_allow_html=True)
+    st.markdown("---")
+    
     if not noticias:
         st.info("No hay titulares relevantes filtrados en las últimas horas.")
     else:
         for n in noticias:
+            if n["impacto"] == "Alcista":
+                badge_html = f'<span class="cgb-badge cgb-badge-sop">🟢 ALCISTA</span>'
+            elif n["impacto"] == "Bajista":
+                badge_html = f'<span class="cgb-badge cgb-badge-res">🔴 BAJISTA</span>'
+            else:
+                badge_html = f'<span class="cgb-badge cgb-badge-piv">🟡 NEUTRAL</span>'
+                
             st.markdown(f"""
             <div class="cgb-news-card">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    {badge_html}
+                    <span style="font-size:0.75rem; color:{T['muted']};">{n['fecha_str']}</span>
+                </div>
                 <a href="{n['link']}" target="_blank" class="cgb-news-title">{n['titulo']}</a>
-                <div class="cgb-news-meta">{n['fecha']}</div>
             </div>
             """, unsafe_allow_html=True)
 
