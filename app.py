@@ -43,16 +43,20 @@ st.set_page_config(
 )
 
 # =========================================================
-# CARGA Y CODIFICACIÓN DEL LOGO (BASE64)
+# CARGA Y CODIFICACIÓN DEL LOGO (BASE64) CON SOPORTE JPG/PNG
 # =========================================================
-def get_base64_image(image_path="logo.png"):
-    if os.path.exists(image_path):
-        with open(image_path, "rb") as img_file:
-            return base64.b64encode(img_file.read()).decode("utf-8")
+def get_logo_data_uri():
+    candidates = ["logo.jpg", "logo.jpeg", "logo.png"]
+    for path in candidates:
+        if os.path.exists(path) and os.path.getsize(path) > 0:
+            ext = path.rsplit(".", 1)[-1].lower()
+            mime = "image/jpeg" if ext in ["jpg", "jpeg"] else "image/png"
+            with open(path, "rb") as img_file:
+                b64 = base64.b64encode(img_file.read()).decode("utf-8")
+                return f"data:{mime};base64,{b64}"
     return ""
 
-logo_b64 = get_base64_image("logo.png")
-logo_src = f"data:image/png;base64,{logo_b64}" if logo_b64 else ""
+logo_src = get_logo_data_uri()
 
 # =========================================================
 # GESTIÓN DE TEMAS VISUALES (ESTILOS Y COLORES)
@@ -102,7 +106,7 @@ bg_watermark_css = f"""
         pointer-events: none;
         z-index: 0;
     }}
-""" if logo_b64 else ""
+""" if logo_src else ""
 
 st.markdown(f"""
 <style>
@@ -472,7 +476,7 @@ def gauge_chart(score: float):
 # =========================================================
 # CABECERA (CON LOGO OFICIAL) Y CONTROL SIDEBAR
 # =========================================================
-logo_header_html = f'<img src="{logo_src}" class="cgb-logo-img" alt="Logo CGB" />' if logo_b64 else '<div class="cgb-logo-fallback">CGB</div>'
+logo_header_html = f'<img src="{logo_src}" class="cgb-logo-img" alt="Logo CGB" />' if logo_src else '<div class="cgb-logo-fallback">CGB</div>'
 
 st.markdown(f"""
 <div class="cgb-header">
