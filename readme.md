@@ -1,4 +1,4 @@
-[README-2.md](https://github.com/user-attachments/files/31421764/README-2.md)
+[README.md](https://github.com/user-attachments/files/31422334/README.md)
 # CGB Terminal — XAU/USD Market Intelligence
 
 Professional Streamlit terminal for quantitative analysis of gold (XAU/USD).
