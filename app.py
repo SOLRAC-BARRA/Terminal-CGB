@@ -3,7 +3,6 @@
 =========================================================
 CGB COMUNITY — Terminal Cuantitativo XAU/USD (Versión Pro)
 =========================================================
-Desarrollado para análisis técnico, macroeconómico y cuantitativo del Oro.
 """
 
 import time
@@ -139,7 +138,7 @@ st.markdown(f"""
 
 PLOTLY_LAYOUT = dict(
     paper_bgcolor=T["card"], plot_bgcolor=T["card"], font_color=T["text"],
-    font_family="Inter", margin=dict(l=15, r=15, t=35, b=15),
+    font_family="Inter",
     xaxis=dict(gridcolor=T["border"], zerolinecolor=T["border"]),
     yaxis=dict(gridcolor=T["border"], zerolinecolor=T["border"]),
 )
@@ -185,7 +184,6 @@ def get_price_data(ticker: str, period: str = "1y", interval: str = "1d") -> pd.
 
 @st.cache_data(ttl=600, show_spinner=False)
 def get_us02y() -> pd.DataFrame:
-    """Obtiene rendimiento del Bono 2 años (US02Y) con fallbacks múltiples."""
     try:
         import pandas_datareader.data as web
         end = datetime.today()
@@ -306,7 +304,7 @@ def get_cot_gold() -> pd.DataFrame:
     df = _retry(_fetch, tries=2)
     return df if df is not None else pd.DataFrame()
 
-# Opciones (Walls & Gamma Proxy) con filtro robusto ATM
+# Opciones (Walls & Gamma Proxy)
 @st.cache_data(ttl=1800, show_spinner=False)
 def get_options_walls(tickers=("GLD", "IAU")):
     for ticker in tickers:
@@ -320,7 +318,6 @@ def get_options_walls(tickers=("GLD", "IAU")):
                 continue
             spot_price = hist["Close"].iloc[-1]
             
-            # Buscar en las primeras 3 fechas de vencimiento activas
             for exp in exps[:3]:
                 chain = tk.option_chain(exp)
                 calls = chain.calls.dropna(subset=["strike", "openInterest"])
@@ -328,7 +325,6 @@ def get_options_walls(tickers=("GLD", "IAU")):
                 if calls.empty and puts.empty:
                     continue
                 
-                # Filtrar strikes cerca del precio actual (+/- 12%)
                 calls_f = calls[(calls["strike"] >= spot_price * 0.88) & (calls["strike"] <= spot_price * 1.12)]
                 puts_f = puts[(puts["strike"] >= spot_price * 0.88) & (puts["strike"] <= spot_price * 1.12)]
                 
@@ -486,7 +482,7 @@ with tab1:
                     marker_color=[T["bull"] if v >= 55 else (T["bear"] if v <= 45 else T["neutral"]) for v in señales.values()],
                     text=[f"{v:.0f}" for v in señales.values()], textposition="outside",
                 ))
-                fig_bar.update_layout(xaxis_range=[0, 105], height=260, **PLOTLY_LAYOUT)
+                fig_bar.update_layout(xaxis_range=[0, 105], height=260, margin=dict(l=15, r=15, t=15, b=15), **PLOTLY_LAYOUT)
                 st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False})
 
     # Métricas Clave Principales
@@ -555,17 +551,17 @@ with tab2:
         fig.add_hline(y=70, line_dash="dash", line_color=T["bear"], row=2, col=1)
         fig.add_hline(y=30, line_dash="dash", line_color=T["bull"], row=2, col=1)
 
-        fig.update_layout(height=600, xaxis_rangeslider_visible=False, **PLOTLY_LAYOUT)
+        fig.update_layout(height=600, xaxis_rangeslider_visible=False, margin=dict(l=15, r=15, t=35, b=15), **PLOTLY_LAYOUT)
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
         col_a, col_b = st.columns(2)
         with col_a:
             fig_vol = go.Figure(go.Bar(x=df.index, y=df["Volume"], marker_color=T["blue"]))
-            fig_vol.update_layout(title="Volumen Negociado", height=240, **PLOTLY_LAYOUT)
+            fig_vol.update_layout(title="Volumen Negociado", height=240, margin=dict(l=15, r=15, t=35, b=15), **PLOTLY_LAYOUT)
             st.plotly_chart(fig_vol, use_container_width=True, config={"displayModeBar": False})
         with col_b:
             fig_atr = go.Figure(go.Scatter(x=df.index, y=df["ATR14"], line=dict(color=T["bear"], width=2)))
-            fig_atr.update_layout(title="ATR (14) — Volatilidad Diaria ($)", height=240, **PLOTLY_LAYOUT)
+            fig_atr.update_layout(title="ATR (14) — Volatilidad Diaria ($)", height=240, margin=dict(l=15, r=15, t=35, b=15), **PLOTLY_LAYOUT)
             st.plotly_chart(fig_atr, use_container_width=True, config={"displayModeBar": False})
 
 # =========================================================
@@ -580,7 +576,7 @@ with tab3:
                 x=df_dxy.index, open=df_dxy["Open"], high=df_dxy["High"], low=df_dxy["Low"], close=df_dxy["Close"],
                 increasing_line_color=T["bull"], decreasing_line_color=T["bear"], name="DXY"
             ))
-            fig.update_layout(height=350, xaxis_rangeslider_visible=False, **PLOTLY_LAYOUT)
+            fig.update_layout(height=350, xaxis_rangeslider_visible=False, margin=dict(l=15, r=15, t=15, b=15), **PLOTLY_LAYOUT)
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
     with c2:
         st.markdown('<div class="cgb-label">Rendimiento Bono USA 2A (US02Y)</div>', unsafe_allow_html=True)
@@ -589,7 +585,7 @@ with tab3:
                 x=df_us02y.index, y=df_us02y.iloc[:, 0], line=dict(color=T["primary_light"], width=2),
                 fill="tozeroy", fillcolor="rgba(201,162,39,0.08)"
             ))
-            fig.update_layout(height=350, **PLOTLY_LAYOUT)
+            fig.update_layout(height=350, margin=dict(l=15, r=15, t=15, b=15), **PLOTLY_LAYOUT)
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     # CORRELACIÓN MÓVIL CUANTITATIVA (ROLLING CORRELATION)
@@ -607,7 +603,7 @@ with tab3:
         fig_corr = go.Figure()
         fig_corr.add_trace(go.Scatter(x=rolling_corr.index, y=rolling_corr, line=dict(color=T["blue"], width=2), name="Corr 30d (Oro vs DXY)"))
         fig_corr.add_hline(y=0, line_dash="dash", line_color=T["muted"])
-        fig_corr.update_layout(height=260, yaxis_range=[-1, 1], **PLOTLY_LAYOUT)
+        fig_corr.update_layout(height=260, yaxis_range=[-1, 1], margin=dict(l=15, r=15, t=15, b=15), **PLOTLY_LAYOUT)
         st.plotly_chart(fig_corr, use_container_width=True, config={"displayModeBar": False})
         st.caption("Una correlación cercana a -1 indica una fuerte relación inversa histórica entre el Dólar y el Oro.")
 
@@ -624,7 +620,6 @@ with tab4:
         
         st.markdown(f'<div class="cgb-label">Informe Commitments of Traders (COT) — COMEX Oro · Fecha: {fecha_str}</div>', unsafe_allow_html=True)
         
-        # Tabla resumen COT
         col_cot1, col_cot2, col_cot3 = st.columns(3)
         
         com_net = last_cot.get("comm_positions_long_all", 0) - last_cot.get("comm_positions_short_all", 0)
@@ -635,13 +630,12 @@ with tab4:
         col_cot2.metric("Grandes Especuladores (Fondos)", f"{noncom_net:+,.0f}", "Posición Neta")
         col_cot3.metric("Pequeños Traders", f"{small_net:+,.0f}", "Posición Neta")
 
-        # Gráfico evolutivo COT
         fig_cot = go.Figure()
         fig_cot.add_trace(go.Scatter(x=df_cot["report_date_as_yyyy_mm_dd"], y=df_cot["noncomm_positions_long_all"], name="Grandes Esp. — Largos", line=dict(color=T["bull"])))
         fig_cot.add_trace(go.Scatter(x=df_cot["report_date_as_yyyy_mm_dd"], y=df_cot["noncomm_positions_short_all"], name="Grandes Esp. — Cortos", line=dict(color=T["bear"])))
         fig_cot.add_trace(go.Scatter(x=df_cot["report_date_as_yyyy_mm_dd"], y=df_cot["comm_positions_long_all"], name="Comerciales — Largos", line=dict(color=T["blue"], dash="dot")))
         
-        fig_cot.update_layout(height=380, title="Evolución Histórica de Contratos", **PLOTLY_LAYOUT)
+        fig_cot.update_layout(height=380, title="Evolución Histórica de Contratos", margin=dict(l=15, r=15, t=35, b=15), **PLOTLY_LAYOUT)
         st.plotly_chart(fig_cot, use_container_width=True, config={"displayModeBar": False})
 
 # =========================================================
@@ -660,7 +654,7 @@ with tab5:
         fig_opt.add_trace(go.Bar(x=calls["strike"], y=calls["openInterest"], name="Calls (Resistencias)", marker_color=T["bull"]))
         fig_opt.add_trace(go.Bar(x=puts["strike"], y=puts["openInterest"], name="Puts (Soportes)", marker_color=T["bear"]))
         
-        fig_opt.update_layout(height=420, barmode="group", xaxis_title="Strike Price ($)", yaxis_title="Open Interest (Contratos)", **PLOTLY_LAYOUT)
+        fig_opt.update_layout(height=420, barmode="group", xaxis_title="Strike Price ($)", yaxis_title="Open Interest (Contratos)", margin=dict(l=15, r=15, t=35, b=15), **PLOTLY_LAYOUT)
         st.plotly_chart(fig_opt, use_container_width=True, config={"displayModeBar": False})
 
 # =========================================================
@@ -678,13 +672,11 @@ with tab6:
     sl_price = rc4.number_input("Stop Loss ($):", min_value=100.0, value=entry_price - 15.0)
     tp_price = rc5.number_input("Take Profit ($):", min_value=100.0, value=entry_price + 30.0)
 
-    # Cálculos Cuantitativos de Riesgo
     risk_amount = balance * (risk_pct / 100.0)
     sl_distance = abs(entry_price - sl_price)
     tp_distance = abs(tp_price - entry_price)
     
     if sl_distance > 0:
-        # En XAU/USD: 1 Lote Estándar = 100 onzas ($1 de movimiento = $100 por lote)
         lot_size = risk_amount / (sl_distance * 100.0)
         rr_ratio = tp_distance / sl_distance
         profit_amount = lot_size * tp_distance * 100.0
@@ -715,5 +707,4 @@ with tab7:
             </div>
             """, unsafe_allow_html=True)
 
-# Footer Informativo
 st.markdown(f'<div class="cgb-footer" style="text-align:center; padding:20px; color:{T["muted"]}; font-size:0.8rem;">CGB COMUNITY — Terminal Cuantitativo de Análisis. Los datos son puramente informativos y educativos. No representan una recomendación financiera.</div>', unsafe_allow_html=True)
