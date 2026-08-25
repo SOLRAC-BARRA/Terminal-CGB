@@ -1,8 +1,9 @@
-streamlit>=1.37.0
-numpy>=1.26.0
-pandas>=2.1.0
-plotly>=5.22.0
-requests>=2.31.0
-yfinance>=0.2.40
-feedparser>=6.0.10
-curl_cffi>=0.7.0
+streamlit
+yfinance
+pandas
+numpy
+plotly
+requests
+feedparser
+pandas_datareader
+curl_cffi
