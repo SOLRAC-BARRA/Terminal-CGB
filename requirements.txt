@@ -6,3 +6,4 @@ plotly
 requests
 feedparser
 pandas_datareader
+curl_cffi
