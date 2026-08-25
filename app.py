@@ -52,7 +52,7 @@ except Exception:
 # ---------------------------------------------------------------------
 st.set_page_config(
     page_title="CGB Terminal | XAU/USD",
-    page_icon="CGB",
+    page_icon="logo.jpg" if os.path.exists("logo.jpg") else "📊",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -832,6 +832,25 @@ with st.sidebar:
 # ---------------------------------------------------------------------
 # DATA ACCESS
 # ---------------------------------------------------------------------
+# NOTE:
+# The first version relied almost entirely on yfinance. On some Streamlit
+# Cloud deployments yfinance can return an empty DataFrame because Yahoo
+# blocks/changes the session handshake.  We therefore use a direct chart
+# request as the PRIMARY historical-price source and keep yfinance only as
+# a secondary fallback.
+
+HTTP_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/139 Safari/537.36",
+    "Accept": "application/json,text/plain,*/*",
+}
+
+DATA_ERRORS = {}
+
+
+def remember_error(source, message):
+    DATA_ERRORS[source] = str(message)[-300:]
+
+
 def get_yf_session():
     if HAS_CURL_CFFI:
         try:
@@ -844,9 +863,9 @@ def get_yf_session():
 YF_SESSION = get_yf_session()
 
 
-def retry(fn, tries=3, delay=1.0):
+def retry(fn, tries=2, delay=1.0):
     last = None
-    for _ in range(tries):
+    for attempt in range(tries):
         try:
             result = fn()
             if result is not None and not (
@@ -855,41 +874,109 @@ def retry(fn, tries=3, delay=1.0):
                 return result
         except Exception as exc:
             last = exc
-        time.sleep(delay)
+            if attempt + 1 < tries:
+                time.sleep(delay)
+    if last:
+        return None
     return None
+
+
+def _yahoo_chart_request(ticker, period="1y", interval="1d"):
+    """Fetch OHLCV from Yahoo's chart endpoint without yfinance."""
+    last_error = None
+    for host in ("query1.finance.yahoo.com", "query2.finance.yahoo.com"):
+        try:
+            url = f"https://{host}/v8/finance/chart/{ticker}"
+            response = requests.get(
+                url,
+                params={
+                    "range": period,
+                    "interval": interval,
+                    "includePrePost": "false",
+                    "events": "div,splits",
+                },
+                headers=HTTP_HEADERS,
+                timeout=15,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            result = ((payload.get("chart") or {}).get("result") or [None])[0]
+            if not result:
+                err = ((payload.get("chart") or {}).get("error") or {}).get("description")
+                raise RuntimeError(err or "Yahoo returned no chart result")
+
+            timestamps = result.get("timestamp") or []
+            quote = ((result.get("indicators") or {}).get("quote") or [{}])[0]
+            if not timestamps or not quote:
+                raise RuntimeError("Yahoo chart contains no OHLCV rows")
+
+            frame = pd.DataFrame({
+                "Open": quote.get("open", []),
+                "High": quote.get("high", []),
+                "Low": quote.get("low", []),
+                "Close": quote.get("close", []),
+                "Volume": quote.get("volume", []),
+            }, index=pd.to_datetime(timestamps, unit="s", utc=True))
+            frame.index.name = "Datetime"
+            frame = frame.apply(pd.to_numeric, errors="coerce")
+            frame = frame.dropna(subset=["Close"])
+            if frame.empty:
+                raise RuntimeError("Yahoo returned only empty price rows")
+            return frame
+        except Exception as exc:
+            last_error = exc
+
+    raise RuntimeError(last_error or "Yahoo chart request failed")
 
 
 @st.cache_data(ttl=300, show_spinner=False)
 def get_price_data(ticker: str, period="1y", interval="1d"):
-    def fetch():
+    # Primary: direct Yahoo chart request.
+    try:
+        return _yahoo_chart_request(ticker, period=period, interval=interval)
+    except Exception as exc:
+        remember_error(f"Yahoo {ticker}", exc)
+
+    # Secondary: yfinance.
+    try:
         tk = yf.Ticker(ticker, session=YF_SESSION) if YF_SESSION else yf.Ticker(ticker)
         df = tk.history(period=period, interval=interval, auto_adjust=False)
-        if df is None or df.empty:
-            return None
-        return df.dropna(subset=["Close"])
+        if df is not None and not df.empty and "Close" in df.columns:
+            df = df.dropna(subset=["Close"])
+            if not df.empty:
+                return df
+    except Exception as exc:
+        remember_error(f"yfinance {ticker}", exc)
 
-    df = retry(fetch)
-    return df if df is not None else pd.DataFrame()
+    return pd.DataFrame()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
 def get_us02y():
+    # FRED's public CSV endpoint does not require an API key.
     try:
-        import pandas_datareader.data as web
-
-        end = datetime.today()
-        start = end - timedelta(days=400)
-        df = web.DataReader("DGS2", "fred", start, end).dropna()
+        url = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS2"
+        r = requests.get(url, headers=HTTP_HEADERS, timeout=15)
+        r.raise_for_status()
+        from io import StringIO
+        df = pd.read_csv(StringIO(r.text))
+        df.columns = ["Date", "Close"]
+        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+        df["Close"] = pd.to_numeric(df["Close"], errors="coerce")
+        df = df.dropna(subset=["Date", "Close"]).set_index("Date")
         if not df.empty:
-            df.columns = ["Close"]
-            return df
-    except Exception:
-        pass
+            return df.tail(500)
+    except Exception as exc:
+        remember_error("FRED DGS2", exc)
 
-    for sym in ["2YY=F", "^TNX", "^IRX"]:
-        df = get_price_data(sym, period="1y")
+    # Fallback: Yahoo 2-year Treasury future.
+    try:
+        df = get_price_data("2YY=F", period="1y")
         if not df.empty:
             return df[["Close"]]
+    except Exception as exc:
+        remember_error("Yahoo 2YY=F", exc)
+
     return pd.DataFrame()
 
 
@@ -897,46 +984,31 @@ def get_us02y():
 def get_cot_gold():
     url_disagg = "https://publicreporting.cftc.gov/resource/kh3c-5v3d.json"
     url_legacy = "https://publicreporting.cftc.gov/resource/6dca-aqww.json"
-
     params = {
         "$where": "cftc_contract_market_code='088691'",
         "$order": "report_date_as_yyyy_mm_dd DESC",
         "$limit": 30,
     }
 
-    def fetch():
-        r = requests.get(
-            url_disagg,
-            params=params,
-            timeout=12,
-            headers={"User-Agent": "Mozilla/5.0"},
-        )
-        if r.status_code == 200 and len(r.json()) > 0:
-            df = pd.DataFrame(r.json())
-        else:
-            r = requests.get(
-                url_legacy,
-                params=params,
-                timeout=12,
-                headers={"User-Agent": "Mozilla/5.0"},
-            )
+    for url in (url_disagg, url_legacy):
+        try:
+            r = requests.get(url, params=params, timeout=15, headers=HTTP_HEADERS)
             r.raise_for_status()
-            df = pd.DataFrame(r.json())
+            rows = r.json()
+            if not rows:
+                continue
+            df = pd.DataFrame(rows)
+            for col in df.columns:
+                if "positions" in col or "pct_of_oi" in col or col == "open_interest_all":
+                    df[col] = pd.to_numeric(df[col], errors="coerce")
+            df["report_date_as_yyyy_mm_dd"] = pd.to_datetime(
+                df["report_date_as_yyyy_mm_dd"], errors="coerce"
+            )
+            return df.sort_values("report_date_as_yyyy_mm_dd")
+        except Exception as exc:
+            remember_error("CFTC COT", exc)
 
-        if df.empty:
-            return None
-
-        for col in df.columns:
-            if "positions" in col or "pct_of_oi" in col or col == "open_interest_all":
-                df[col] = pd.to_numeric(df[col], errors="coerce")
-
-        df["report_date_as_yyyy_mm_dd"] = pd.to_datetime(
-            df["report_date_as_yyyy_mm_dd"]
-        )
-        return df.sort_values("report_date_as_yyyy_mm_dd")
-
-    df = retry(fetch, tries=2)
-    return df if df is not None else pd.DataFrame()
+    return pd.DataFrame()
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -947,35 +1019,22 @@ def get_options_walls(tickers=("GLD", "IAU")):
             exps = tk.options
             if not exps:
                 continue
-
             hist = tk.history(period="5d")
             if hist.empty:
                 continue
-
             spot_price = hist["Close"].iloc[-1]
-
             for exp in exps[:3]:
                 chain = tk.option_chain(exp)
                 calls = chain.calls.dropna(subset=["strike", "openInterest"])
                 puts = chain.puts.dropna(subset=["strike", "openInterest"])
-
-                calls_f = calls[
-                    (calls["strike"] >= spot_price * 0.88)
-                    & (calls["strike"] <= spot_price * 1.12)
-                ]
-                puts_f = puts[
-                    (puts["strike"] >= spot_price * 0.88)
-                    & (puts["strike"] <= spot_price * 1.12)
-                ]
-
+                calls_f = calls[(calls["strike"] >= spot_price * .88) & (calls["strike"] <= spot_price * 1.12)]
+                puts_f = puts[(puts["strike"] >= spot_price * .88) & (puts["strike"] <= spot_price * 1.12)]
                 c_agg = calls_f.groupby("strike")["openInterest"].sum().reset_index()
                 p_agg = puts_f.groupby("strike")["openInterest"].sum().reset_index()
-
                 if c_agg["openInterest"].sum() > 0 or p_agg["openInterest"].sum() > 0:
                     return c_agg, p_agg, exp, ticker, spot_price
-        except Exception:
-            continue
-
+        except Exception as exc:
+            remember_error(f"Options {ticker}", exc)
     return pd.DataFrame(), pd.DataFrame(), None, None, None
 
 
@@ -1326,6 +1385,22 @@ if auto_refresh:
 gold_ok = not df_gold.empty
 dxy_ok = not df_dxy.empty
 yield_ok = not df_us02y.empty
+
+# Visible diagnostics: never silently show a blank terminal.
+if not gold_ok or not dxy_ok or not yield_ok:
+    missing = []
+    if not gold_ok:
+        missing.append("GC=F (Gold)")
+    if not dxy_ok:
+        missing.append("DXY")
+    if not yield_ok:
+        missing.append("US 2Y")
+    detail = " · ".join(missing)
+    st.warning(
+        f"Market data is partially unavailable: {detail}. "
+        "The terminal will continue with the sources that are reachable. "
+        "Use 'Actualizar datos' after a few seconds if the provider is temporarily rate-limited."
+    )
 
 
 # ---------------------------------------------------------------------
