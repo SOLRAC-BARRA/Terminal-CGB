@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 =========================================================
-CGB COMUNITY — Terminal Cuantitativo XAU/USD (Versión Pro con Logo)
+CGB COMUNITY — Terminal Cuantitativo XAU/USD (Versión Pro)
 =========================================================
 """
 
@@ -59,28 +59,38 @@ def get_logo_data_uri():
 logo_src = get_logo_data_uri()
 
 # =========================================================
-# GESTIÓN DE TEMAS VISUALES (ESTILOS Y COLORES)
+# GESTIÓN DE TEMAS VISUALES (PALETAS DE ALTO CONTRASTE)
 # =========================================================
 THEMES = {
-    "🌟 CGB Gold Deluxe (Predeterminado)": {
-        "bg": "#0a0c10", "card": "#12151c", "border": "#232733",
-        "primary": "#c9a227", "primary_light": "#e8c766", "text": "#eef0f3",
-        "muted": "#8b93a3", "bull": "#2fd583", "bear": "#ff5a67", "neutral": "#e8c766", "blue": "#4da6ff"
-    },
-    "🟦 Midnight Navy": {
-        "bg": "#0b132b", "card": "#1c2541", "border": "#3a506b",
-        "primary": "#48cae4", "primary_light": "#90e0ef", "text": "#edf6f9",
-        "muted": "#8d99ae", "bull": "#06d6a0", "bear": "#ef476f", "neutral": "#ffd166", "blue": "#118ab2"
-    },
-    "🟢 TradingView Dark": {
-        "bg": "#131722", "card": "#1e222d", "border": "#2a2e39",
-        "primary": "#2962ff", "primary_light": "#5b8cff", "text": "#d1d4dc",
-        "muted": "#787b86", "bull": "#089981", "bear": "#f23645", "neutral": "#ff9800", "blue": "#2962ff"
-    },
     "🏛️ Institutional Bloomberg": {
         "bg": "#000000", "card": "#111111", "border": "#2a2a2a",
         "primary": "#ff9900", "primary_light": "#ffb84d", "text": "#00ff00",
         "muted": "#aaaaaa", "bull": "#00ff00", "bear": "#ff0000", "neutral": "#ff9900", "blue": "#00ffff"
+    },
+    "☀️ Executive Light (Modo Claro)": {
+        "bg": "#f4f6f9", "card": "#ffffff", "border": "#cbd5e1",
+        "primary": "#b45309", "primary_light": "#d97706", "text": "#0f172a",
+        "muted": "#64748b", "bull": "#16a34a", "bear": "#dc2626", "neutral": "#d97706", "blue": "#2563eb"
+    },
+    "⚡ Cyberpunk Neon": {
+        "bg": "#0d0221", "card": "#190a38", "border": "#ff007f",
+        "primary": "#00f5d4", "primary_light": "#7b2cbf", "text": "#ffffff",
+        "muted": "#9d4edd", "bull": "#00f5d4", "bear": "#ff0055", "neutral": "#fee440", "blue": "#00bbf9"
+    },
+    "🌲 Emerald Matrix": {
+        "bg": "#061a14", "card": "#0b2b22", "border": "#165b46",
+        "primary": "#10b981", "primary_light": "#34d399", "text": "#e6f4f1",
+        "muted": "#6b9080", "bull": "#00ff9d", "bear": "#ff4d6d", "neutral": "#f4a261", "blue": "#3a86ff"
+    },
+    "👑 Royal Obsidian & Gold": {
+        "bg": "#050505", "card": "#14120c", "border": "#d4af37",
+        "primary": "#ffd700", "primary_light": "#ffe87c", "text": "#fffdfa",
+        "muted": "#a39778", "bull": "#00e676", "bear": "#ff1744", "neutral": "#ffd700", "blue": "#29b6f6"
+    },
+    "🍇 Velvet Violet": {
+        "bg": "#12081f", "card": "#211238", "border": "#432371",
+        "primary": "#9d4edd", "primary_light": "#c77dff", "text": "#f3e8ff",
+        "muted": "#8a70ab", "bull": "#00e676", "bear": "#ff3366", "neutral": "#ffb703", "blue": "#4cc9f0"
     }
 }
 
